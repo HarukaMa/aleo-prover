@@ -50,7 +50,10 @@ impl Prover {
         let mut thread_pools: Vec<ThreadPool> = Vec::new();
         let pool_count;
         let pool_threads;
-        if threads % 8 == 0 {
+        if threads % 12 == 0 {
+            pool_count = threads / 12;
+            pool_threads = 12;
+        } else if threads % 8 == 0 {
             pool_count = threads / 8;
             pool_threads = 8;
         } else if threads % 6 == 0 {
@@ -173,7 +176,7 @@ impl Prover {
 
         let current_block = self.current_block.clone();
         let terminator = self.terminator.clone();
-        let address = self.address.clone();
+        let address = self.address;
         let node = self.node.clone();
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
@@ -192,7 +195,7 @@ impl Prover {
 
                     let current_block = current_block.clone();
                     let terminator = terminator.clone();
-                    let address = address.clone();
+                    let address = address;
                     let node = node.clone();
                     let block_template = block_template.clone();
                     let total_proofs = total_proofs.clone();
