@@ -138,11 +138,7 @@ impl Prover {
                 let m5 = *log.get(55).unwrap_or(&0);
                 let m15 = *log.get(45).unwrap_or(&0);
                 let m30 = *log.get(30).unwrap_or(&0);
-                let m60 = if log.len() == 61 {
-                    log.pop_front().unwrap_or_default()
-                } else {
-                    0
-                };
+                let m60 = log.pop_front().unwrap_or_default();
                 info!(
                     "Total proofs: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
                     proofs,
