@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -8,9 +8,9 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
-snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", rev = "48c59e9" }
-snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "504f077" }
-snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "504f077" }
+snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "99ed28cb" }
+snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "d695858e" }
+snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "d695858e" }
 rand = "0.8.4"
 num_cpus = "1.13.1"
 structopt = "0.3.25"
@@ -32,7 +32,11 @@ features = [
     "sync",
 ]
 
+[features]
+enable-cuda = ["snarkvm/cuda"]
+
 [profile.release]
+opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"

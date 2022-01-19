@@ -31,6 +31,13 @@ struct Opt {
     /// Number of threads
     #[structopt(short = "t", long = "threads")]
     threads: Option<u16>,
+
+    #[cfg(feature = "enable-cuda")]
+    /// Indexes of GPUs to use (starts from 0)
+    /// Example: --cuda 0,1,2
+    /// Note: CPU proving will be disabled
+    #[structopt(short = "g", long = "cuda")]
+    cuda: Option<Vec<i16>>,
 }
 
 #[tokio::main]
@@ -46,12 +53,21 @@ async fn main() {
         })
         .try_init();
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
+    let cuda: Option<Vec<i16>>;
+    #[cfg(feature = "enable-cuda")]
+    {
+        cuda = opt.cuda;
+    }
+    #[cfg(not(feature = "enable-cuda"))]
+    {
+        cuda = None;
+    }
 
     info!("Starting prover");
     let node = Node::init(opt.address, opt.pool);
     debug!("Node initialized");
 
-    let prover: Arc<Prover> = match Prover::init(opt.address, threads, node.clone()).await {
+    let prover: Arc<Prover> = match Prover::init(opt.address, threads, node.clone(), cuda).await {
         Ok(prover) => prover,
         Err(e) => {
             error!("Unable to initialize prover: {}", e);
