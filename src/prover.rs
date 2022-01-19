@@ -65,7 +65,7 @@ impl Prover {
             pool_count = threads / 4;
             pool_threads = 4;
         };
-        if !cfg!(features = "enable-cuda") || cuda.is_none() {
+        if !cfg!(feature = "enable-cuda") || cuda.is_none() {
             for _ in 0..pool_count {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
@@ -192,7 +192,7 @@ impl Prover {
 
             let _ = task::spawn(async move {
                 let wg = WaitGroup::new();
-                if cfg!(features = "enable-cuda") && cuda.is_some() {
+                if cfg!(feature = "enable-cuda") && cuda.is_some() {
                     for index in cuda.unwrap() {
                         let wg = wg.clone();
 
