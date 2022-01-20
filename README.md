@@ -76,7 +76,7 @@ snarkVM would load programs to all GPUs in the system but the prover will only u
 ## Changelog
 
 ### 0.2.2
-Added log file support.
+Added log file support.  
 Added extra check for `-g` option.
 
 ### 0.2.1
