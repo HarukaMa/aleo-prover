@@ -2067,7 +2067,7 @@ checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 [[package]]
 name = "snarkos"
 version = "2.0.0"
-source = "git+https://github.com/HarukaMa/snarkOS.git?rev=effd820a#effd820ae48e26137e065c66be3567b5b61fd573"
+source = "git+https://github.com/HarukaMa/snarkOS.git?rev=55dc67b2#55dc67b2f985a9da49fb4bbfc45dde1f515b3623"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -2107,7 +2107,7 @@ dependencies = [
 [[package]]
 name = "snarkos-storage"
 version = "2.0.0"
-source = "git+https://github.com/HarukaMa/snarkOS.git?rev=effd820a#effd820ae48e26137e065c66be3567b5b61fd573"
+source = "git+https://github.com/HarukaMa/snarkOS.git?rev=55dc67b2#55dc67b2f985a9da49fb4bbfc45dde1f515b3623"
 dependencies = [
  "anyhow",
  "bincode",
@@ -2127,7 +2127,7 @@ dependencies = [
 [[package]]
 name = "snarkvm"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "snarkvm-algorithms",
  "snarkvm-dpc",
@@ -2137,7 +2137,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-algorithms"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -2169,7 +2169,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-curves"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "derivative",
  "rand",
@@ -2183,7 +2183,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-derives"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "proc-macro-crate",
  "proc-macro-error",
@@ -2195,7 +2195,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-dpc"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "anyhow",
  "base58",
@@ -2227,7 +2227,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-fields"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "anyhow",
  "derivative",
@@ -2240,7 +2240,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-gadgets"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "anyhow",
  "derivative",
@@ -2260,7 +2260,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-marlin"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "bincode",
  "blake2",
@@ -2286,7 +2286,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-parameters"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -2303,7 +2303,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-polycommit"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "derivative",
  "digest 0.9.0",
@@ -2321,12 +2321,12 @@ dependencies = [
 [[package]]
 name = "snarkvm-profiler"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 
 [[package]]
 name = "snarkvm-r1cs"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -2342,7 +2342,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-utilities"
 version = "0.7.5"
-source = "git+https://github.com/HarukaMa/snarkVM.git?rev=3fbd6c5d#3fbd6c5d66e66be92dbe826b2b21000ad89279bd"
+source = "git+https://github.com/HarukaMa/snarkVM.git?rev=47be41cf#47be41cf1af1907d89e997f4eeb5160dec9dc319"
 dependencies = [
  "anyhow",
  "bincode",
