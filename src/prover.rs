@@ -138,10 +138,10 @@ impl Prover {
         task::spawn(async move {
             fn calculate_proof_rate(now: u32, past: u32, interval: u32) -> Box<str> {
                 if interval < 1 {
-                    return Box::from("N/A");
+                    return Box::from("---");
                 }
                 if now <= past || past == 0 {
-                    return Box::from("N/A");
+                    return Box::from("---");
                 }
                 let rate = (now - past) as f64 / (interval * 60) as f64;
                 Box::from(format!("{:.2}", rate))
