@@ -20,6 +20,7 @@ pub struct Prover {
     address: Address<Testnet2>,
     thread_pools: Arc<Vec<ThreadPool>>,
     cuda: Option<Vec<i16>>,
+    cuda_jobs: Option<u8>,
     router: Arc<mpsc::Sender<ProverWork>>,
     node: Arc<Node>,
     terminator: Arc<AtomicBool>,
@@ -48,6 +49,7 @@ impl Prover {
         threads: u16,
         node: Arc<Node>,
         cuda: Option<Vec<i16>>,
+        cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
         let mut thread_pools: Vec<ThreadPool> = Vec::new();
         let pool_count;
@@ -78,6 +80,15 @@ impl Prover {
                 thread_pools.len(),
                 pool_threads
             );
+        } else {
+            let total_jobs = cuda_jobs.clone().unwrap_or(1) * cuda.clone().unwrap().len() as u8;
+            for _ in 0..total_jobs {
+                let pool = ThreadPoolBuilder::new()
+                    .stack_size(8 * 1024 * 1024)
+                    .num_threads(1)
+                    .build()?;
+                thread_pools.push(pool);
+            }
         }
 
         let (router_tx, mut router_rx) = mpsc::channel(1024);
@@ -86,6 +97,7 @@ impl Prover {
             address,
             thread_pools: Arc::new(thread_pools),
             cuda,
+            cuda_jobs,
             router: Arc::new(router_tx),
             node,
             terminator,
@@ -182,6 +194,7 @@ impl Prover {
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
+        let cuda_jobs = self.cuda_jobs.clone();
 
         task::spawn(async move {
             terminator.store(true, Ordering::SeqCst);
@@ -193,65 +206,76 @@ impl Prover {
             let _ = task::spawn(async move {
                 let wg = WaitGroup::new();
                 if cfg!(feature = "enable-cuda") && cuda.is_some() {
-                    for index in cuda.unwrap() {
-                        let wg = wg.clone();
+                    for gpu_index in cuda.unwrap() {
+                        for job_index in 0..cuda_jobs.unwrap_or(1) {
+                            let tp = thread_pools
+                                .get(
+                                    gpu_index as usize * cuda_jobs.unwrap_or(1) as usize
+                                        + job_index as usize,
+                                )
+                                .unwrap();
+                            let wg = wg.clone();
 
-                        let current_block = current_block.clone();
-                        let terminator = terminator.clone();
-                        let address = address;
-                        let node = node.clone();
-                        let block_template = block_template.clone();
-                        let total_proofs = total_proofs.clone();
-                        task::spawn(async move {
-                            while !terminator.load(Ordering::SeqCst) {
-                                let block_height = block_template.block_height();
-                                if block_height != *(current_block.try_read().unwrap()) {
-                                    debug!(
-                                        "Terminating stale work: current {} latest {}",
-                                        block_height,
-                                        *(current_block.try_read().unwrap())
-                                    );
-                                    break;
-                                }
-                                if let Ok(block_header) = BlockHeader::mine_once_unchecked(
-                                    &block_template,
-                                    &terminator,
-                                    &mut thread_rng(),
-                                    index,
-                                ) {
-                                    // Ensure the share difficulty target is met.
-                                    let nonce = block_header.nonce();
-                                    let proof = block_header.proof().clone();
-                                    let proof_difficulty =
-                                        proof.to_proof_difficulty().unwrap_or(u64::MAX);
-                                    if proof_difficulty > share_difficulty {
+                            let current_block = current_block.clone();
+                            let terminator = terminator.clone();
+                            let address = address;
+                            let node = node.clone();
+                            let block_template = block_template.clone();
+                            let total_proofs = total_proofs.clone();
+                            tp.spawn(move || {
+                                while !terminator.load(Ordering::SeqCst) {
+                                    let block_height = block_template.block_height();
+                                    if block_height != *(current_block.try_read().unwrap()) {
                                         debug!(
-                                            "Share difficulty target not met: {} > {}",
-                                            proof_difficulty, share_difficulty
+                                            "Terminating stale work: current {} latest {}",
+                                            block_height,
+                                            *(current_block.try_read().unwrap())
                                         );
+                                        break;
+                                    }
+                                    if let Ok(block_header) = BlockHeader::mine_once_unchecked(
+                                        &block_template,
+                                        &terminator,
+                                        &mut thread_rng(),
+                                        gpu_index,
+                                    ) {
+                                        // Ensure the share difficulty target is met.
+                                        let nonce = block_header.nonce();
+                                        let proof = block_header.proof().clone();
+                                        let proof_difficulty =
+                                            proof.to_proof_difficulty().unwrap_or(u64::MAX);
+                                        if proof_difficulty > share_difficulty {
+                                            debug!(
+                                                "Share difficulty target not met: {} > {}",
+                                                proof_difficulty, share_difficulty
+                                            );
+                                            *(block_on(total_proofs.write())) += 1;
+                                            continue;
+                                        }
+
+                                        info!(
+                                            "Share found for block {} with weight {}",
+                                            block_height,
+                                            u64::MAX / proof_difficulty
+                                        );
+
+                                        // Send a `PoolResponse` to the operator.
+                                        let message = Message::PoolResponse(
+                                            address,
+                                            nonce,
+                                            Data::Object(proof),
+                                        );
+                                        if let Err(error) =
+                                            block_on(node.router().send(SendMessage { message }))
+                                        {
+                                            error!("Failed to send PoolResponse: {}", error);
+                                        }
                                         *(block_on(total_proofs.write())) += 1;
-                                        continue;
                                     }
-
-                                    info!(
-                                        "Share found for block {} with weight {}",
-                                        block_height,
-                                        u64::MAX / proof_difficulty
-                                    );
-
-                                    // Send a `PoolResponse` to the operator.
-                                    let message =
-                                        Message::PoolResponse(address, nonce, Data::Object(proof));
-                                    if let Err(error) =
-                                        block_on(node.router().send(SendMessage { message }))
-                                    {
-                                        error!("Failed to send PoolResponse: {}", error);
-                                    }
-                                    *(block_on(total_proofs.write())) += 1;
                                 }
-                            }
-                            drop(wg);
-                        });
+                                drop(wg);
+                            });
+                        }
                     }
                 } else {
                     for tp in &*thread_pools {
