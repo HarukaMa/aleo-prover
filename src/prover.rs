@@ -73,7 +73,9 @@ impl Prover {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
                     .num_threads(pool_threads as usize)
-                    .thread_name(|idx| format!("prover-cpu-worker pool {} thread {}", index, idx))
+                    .thread_name(move |idx| {
+                        format!("prover-cpu-worker pool {} thread {}", index, idx)
+                    })
                     .build()?;
                 thread_pools.push(pool);
             }
