@@ -8,9 +8,9 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
-snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "942d8340" }
-snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "d6bb28a3" }
-snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "d6bb28a3" }
+snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "62d198d7" }
+snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "dba5ccb1" }
+snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "dba5ccb1" }
 rand = "0.8.4"
 num_cpus = "1.13.1"
 structopt = "0.3.25"
