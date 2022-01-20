@@ -26,7 +26,7 @@ Run `cargo build --release` to build the binary.
 Please refer to the usage help (`target/release/aleo-prover --help`):
 
 ```
-prover 0.1.0
+prover 0.2.0
 Standalone prover.
 
 USAGE:
@@ -39,6 +39,13 @@ FLAGS:
 
 OPTIONS:
     -a, --address <address>    Prover address (aleo1...)
+    -g, --cuda <cuda>...       Indexes of GPUs to use (starts from 0)
+                               Specify multiple times to use multiple GPUs
+                               Example: -g 0 -g 1 -g 2
+                               Note: Pure CPU proving will be disabled as each GPU job requires one CPU thread as well
+    -j, --cuda-jobs <jobs>     Parallel jobs per GPU, defaults to 1
+                               Example: -g 0 -g 1 -j 4
+                               The above example will result in 8 jobs in total
     -p, --pool <pool>          Pool address:port
     -t, --threads <threads>    Number of threads
 ```
@@ -53,7 +60,15 @@ You can enable debug logging by `--debug` option. When starting the prover, ther
 
 ## GPU support?
 
-Still working on it.
+GPU support is added in version 0.2.0.
+
+Use `-g` option to enable GPU support. To use multiple GPUs, use `-g` multiple times with different GPU indexes.
+
+Use `-j` option to specify the number of jobs per GPU. The default is 1.
+
+Every GPU job will use a CPU thread as well, so it's really a "GPU accelerated prover" instead of a "GPU prover", as only the scalar multiplication on BLS12-377 curve is GPU accelerated.
+
+snarkVM would load programs to all GPUs in the system but the prover will only use the specified GPUs. It wastes some GPU memory, unfortunately 
 
 ## License
 
