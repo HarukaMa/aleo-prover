@@ -72,9 +72,7 @@ impl Prover {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
                     .num_threads(pool_threads as usize)
-                    .thread_name(move |idx| {
-                        format!("prover-cpu-worker pool {} thread {}", index, idx)
-                    })
+                    .thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
                     .build()?;
                 thread_pools.push(pool);
             }
@@ -215,10 +213,7 @@ impl Prover {
                             let block_template = block_template.clone();
                             let total_proofs = total_proofs.clone();
                             let _ = thread::Builder::new()
-                                .name(format!(
-                                    "prover-cuda-worker gpu {} job {}",
-                                    gpu_index, job_index
-                                ))
+                                .name(format!("ap-cuda-{}-{}", gpu_index, job_index))
                                 .spawn(move || {
                                     while !terminator.load(Ordering::SeqCst) {
                                         let block_height = block_template.block_height();
