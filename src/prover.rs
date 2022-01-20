@@ -13,7 +13,6 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
-use tokio::sync::RwLock;
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info};
 
