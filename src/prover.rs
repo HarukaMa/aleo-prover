@@ -287,6 +287,8 @@ impl Prover {
                             });
                         }
                     }
+                    wg.wait();
+                    terminator.store(false, Ordering::SeqCst);
                 } else {
                     for tp in &*thread_pools {
                         let wg = wg.clone();
