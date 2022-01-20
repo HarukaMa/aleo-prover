@@ -70,7 +70,15 @@ Use `-j` option to specify the number of jobs per GPU. The default is 1.
 
 Every GPU job will use a CPU thread as well, so it's really a "GPU accelerated prover" instead of a "GPU prover", as only the scalar multiplication on BLS12-377 curve is GPU accelerated.
 
-snarkVM would load programs to all GPUs in the system but the prover will only use the specified GPUs. It wastes some GPU memory, unfortunately 
+snarkVM would load programs to all GPUs in the system but the prover will only use the specified GPUs. It wastes some GPU memory, unfortunately.
+
+## Changelog
+
+### 0.2.0
+Added GPU support.
+
+### 0.1.0
+Initial release.
 
 ## License
 

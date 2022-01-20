@@ -67,7 +67,7 @@ impl Prover {
             pool_count = threads / 4;
             pool_threads = 4;
         };
-        if !cfg!(feature = "enable-cuda") || cuda.is_none() {
+        if cuda.is_none() {
             for index in 0..pool_count {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
