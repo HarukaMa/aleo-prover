@@ -288,11 +288,11 @@ impl Prover {
                         tp.spawn(move || {
                             while !terminator.load(Ordering::SeqCst) {
                                 let block_height = block_template.block_height();
-                                if block_height != *(current_block.try_read().unwrap()) {
+                                if block_height != current_block.load(Ordering::SeqCst) {
                                     debug!(
                                         "Terminating stale work: current {} latest {}",
                                         block_height,
-                                        *(current_block.try_read().unwrap())
+                                        current_block.load(Ordering::SeqCst)
                                     );
                                     break;
                                 }
