@@ -62,6 +62,8 @@ You can enable debug logging by `--debug` option. When starting the prover, ther
 
 GPU support is added in version 0.2.0.
 
+To enable GPU support, use `cargo build --release --features enable-cuda` when building the binary. Obviously you will need to install the CUDA runtime.
+
 Use `-g` option to enable GPU support. To use multiple GPUs, use `-g` multiple times with different GPU indexes.
 
 Use `-j` option to specify the number of jobs per GPU. The default is 1.
