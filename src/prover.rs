@@ -81,7 +81,7 @@ impl Prover {
                 pool_threads
             );
         } else {
-            let total_jobs = cuda_jobs.clone().unwrap_or(1) * cuda.clone().unwrap().len() as u8;
+            let total_jobs = cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8;
             for _ in 0..total_jobs {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
@@ -89,6 +89,10 @@ impl Prover {
                     .build()?;
                 thread_pools.push(pool);
             }
+            debug!(
+                "Created {} prover thread pools with 1 thread each",
+                thread_pools.len()
+            );
         }
 
         let (router_tx, mut router_rx) = mpsc::channel(1024);
@@ -194,7 +198,7 @@ impl Prover {
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
-        let cuda_jobs = self.cuda_jobs.clone();
+        let cuda_jobs = self.cuda_jobs;
 
         task::spawn(async move {
             terminator.store(true, Ordering::SeqCst);
@@ -205,8 +209,8 @@ impl Prover {
 
             let _ = task::spawn(async move {
                 let wg = WaitGroup::new();
-                if cfg!(feature = "enable-cuda") && cuda.is_some() {
-                    for gpu_index in cuda.unwrap() {
+                if let Some(cuda) = cuda {
+                    for gpu_index in cuda {
                         for job_index in 0..cuda_jobs.unwrap_or(1) {
                             let tp = thread_pools
                                 .get(
@@ -214,6 +218,12 @@ impl Prover {
                                         + job_index as usize,
                                 )
                                 .unwrap();
+                            debug!(
+                                "Spawning CUDA worker on GPU {} job {} using tp id {}",
+                                gpu_index,
+                                job_index,
+                                gpu_index as u8 * cuda_jobs.unwrap_or(1) + job_index
+                            );
                             let wg = wg.clone();
 
                             let current_block = current_block.clone();
