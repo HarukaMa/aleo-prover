@@ -9,7 +9,7 @@ use snarkos::{Data, Message};
 use snarkvm::dpc::testnet2::Testnet2;
 use snarkvm::dpc::{Address, BlockHeader, BlockTemplate};
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -25,8 +25,8 @@ pub struct Prover {
     router: Arc<mpsc::Sender<ProverWork>>,
     node: Arc<Node>,
     terminator: Arc<AtomicBool>,
-    current_block: Arc<RwLock<u32>>,
-    total_proofs: Arc<RwLock<u32>>,
+    current_block: Arc<AtomicU32>,
+    total_proofs: Arc<AtomicU32>,
 }
 
 #[derive(Debug)]
@@ -141,7 +141,7 @@ impl Prover {
             let mut log = VecDeque::<u32>::from(vec![0; 60]);
             loop {
                 tokio::time::sleep(Duration::from_secs(60)).await;
-                let proofs = *total_proofs.read().await;
+                let proofs = total_proofs.load(Ordering::SeqCst);
                 log.push_back(proofs);
                 let m1 = *log.get(59).unwrap_or(&0);
                 let m5 = *log.get(55).unwrap_or(&0);
@@ -171,7 +171,7 @@ impl Prover {
     async fn new_work(&self, work: ProverWork) {
         let block_template = work.block_template;
         let block_height = block_template.block_height();
-        *(self.current_block.write().await) = block_height;
+        self.current_block.store(block_height, Ordering::SeqCst);
         let share_difficulty = work.share_difficulty;
         info!(
             "Received new work: block {}, share weight {}",
@@ -215,11 +215,11 @@ impl Prover {
                             thread::spawn(move || {
                                 while !terminator.load(Ordering::SeqCst) {
                                     let block_height = block_template.block_height();
-                                    if block_height != *(current_block.try_read().unwrap()) {
+                                    if block_height != current_block.load(Ordering::SeqCst) {
                                         debug!(
                                             "Terminating stale work: current {} latest {}",
                                             block_height,
-                                            *(current_block.try_read().unwrap())
+                                            current_block.load(Ordering::SeqCst)
                                         );
                                         break;
                                     }
@@ -239,7 +239,7 @@ impl Prover {
                                                 "Share difficulty target not met: {} > {}",
                                                 proof_difficulty, share_difficulty
                                             );
-                                            *(block_on(total_proofs.write())) += 1;
+                                            total_proofs.fetch_add(1, Ordering::SeqCst);
                                             continue;
                                         }
 
@@ -260,7 +260,7 @@ impl Prover {
                                         {
                                             error!("Failed to send PoolResponse: {}", error);
                                         }
-                                        *(block_on(total_proofs.write())) += 1;
+                                        total_proofs.fetch_add(1, Ordering::SeqCst);
                                     }
                                 }
                                 drop(wg);
@@ -306,7 +306,7 @@ impl Prover {
                                             "Share difficulty target not met: {} > {}",
                                             proof_difficulty, share_difficulty
                                         );
-                                        *(block_on(total_proofs.write())) += 1;
+                                        total_proofs.fetch_add(1, Ordering::SeqCst);
                                         continue;
                                     }
 
@@ -324,7 +324,7 @@ impl Prover {
                                     {
                                         error!("Failed to send PoolResponse: {}", error);
                                     }
-                                    *(block_on(total_proofs.write())) += 1;
+                                    total_proofs.fetch_add(1, Ordering::SeqCst);
                                 }
                             }
                             drop(wg);
