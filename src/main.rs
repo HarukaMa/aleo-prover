@@ -37,15 +37,15 @@ struct Opt {
     /// Indexes of GPUs to use (starts from 0)
     /// Specify multiple times to use multiple GPUs
     /// Example: -g 0 -g 1 -g 2
-    /// Note: CPU proving will be disabled
+    /// Note: Pure CPU proving will be disabled as each GPU job requires one CPU thread as well
     #[structopt(short = "g", long = "cuda")]
     cuda: Option<Vec<i16>>,
 
     #[cfg(feature = "enable-cuda")]
     #[structopt(verbatim_doc_comment)]
     /// Parallel jobs per GPU, defaults to 1
-    /// Example: -g 0 -g 1 -j 4 will result in 8 jobs in total
-    /// Each job will use one CPU core as well
+    /// Example: -g 0 -g 1 -j 4
+    /// The above example will result in 8 jobs in total
     #[structopt(short = "j", long = "cuda-jobs")]
     jobs: Option<u8>,
 }
