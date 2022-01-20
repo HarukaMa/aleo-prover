@@ -12,6 +12,7 @@ use crate::prover::Prover;
 #[cfg(vanity)]
 use snarkvm::dpc::{Account, AccountScheme};
 use tracing::{debug, error, info};
+use tracing_subscriber::layer::SubscriberExt;
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "prover", about = "Standalone prover.", setting = structopt::clap::AppSettings::ColoredHelp)]
@@ -31,6 +32,10 @@ struct Opt {
     /// Number of threads
     #[structopt(short = "t", long = "threads")]
     threads: Option<u16>,
+
+    /// Output log to file
+    #[structopt(short = "o", long = "log")]
+    log: Option<String>,
 
     #[cfg(feature = "enable-cuda")]
     #[structopt(verbatim_doc_comment)]
@@ -53,17 +58,34 @@ struct Opt {
 #[tokio::main]
 async fn main() {
     let opt = Opt::from_args();
-    let _ = tracing_subscriber::fmt()
-        .with_ansi(true)
-        .with_writer(std::io::stdout)
-        .with_max_level(if opt.debug {
-            tracing::Level::DEBUG
-        } else {
-            tracing::Level::INFO
-        })
-        .try_init();
+    let tracing_level = if opt.debug {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+    let subscriber = tracing_subscriber::fmt::Subscriber::builder()
+        .with_max_level(tracing_level)
+        .finish();
+    // .with(
+    //     tracing_subscriber::fmt::Layer::default()
+    //         .with_ansi(true)
+    //         .with_writer(std::io::stdout),
+    // );
+    if let Some(log) = opt.log {
+        let file = std::fs::File::create(log).unwrap();
+        let file = tracing_subscriber::fmt::layer()
+            .with_writer(file)
+            .with_ansi(false);
+        tracing::subscriber::set_global_default(subscriber.with(file))
+            .expect("unable to set global default subscriber");
+    } else {
+        tracing::subscriber::set_global_default(subscriber)
+            .expect("unable to set global default subscriber");
+    }
+
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
     let cuda: Option<Vec<i16>>;
+
     let cuda_jobs: Option<u8>;
     #[cfg(feature = "enable-cuda")]
     {
@@ -74,6 +96,12 @@ async fn main() {
     {
         cuda = None;
         cuda_jobs = None;
+    }
+    if let Some(cuda) = cuda.clone() {
+        if cuda.is_empty() {
+            error!("No GPUs specified. Use -g 0 if there is only one GPU.");
+            std::process::exit(1);
+        }
     }
 
     info!("Starting prover");

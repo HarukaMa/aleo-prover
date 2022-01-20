@@ -26,7 +26,7 @@ Run `cargo build --release` to build the binary.
 Please refer to the usage help (`target/release/aleo-prover --help`):
 
 ```
-prover 0.2.0
+prover 0.2.2
 Standalone prover.
 
 USAGE:
@@ -46,6 +46,7 @@ OPTIONS:
     -j, --cuda-jobs <jobs>     Parallel jobs per GPU, defaults to 1
                                Example: -g 0 -g 1 -j 4
                                The above example will result in 8 jobs in total
+    -o, --log <log>            Output log to file
     -p, --pool <pool>          Pool address:port
     -t, --threads <threads>    Number of threads
 ```
@@ -73,6 +74,13 @@ Every GPU job will use a CPU thread as well, so it's really a "GPU accelerated p
 snarkVM would load programs to all GPUs in the system but the prover will only use the specified GPUs. It wastes some GPU memory, unfortunately.
 
 ## Changelog
+
+### 0.2.2
+Added log file support.
+Added extra check for `-g` option.
+
+### 0.2.1
+Removed OpenCL dependency.
 
 ### 0.2.0
 Added GPU support.
