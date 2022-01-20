@@ -11,6 +11,7 @@ use snarkvm::dpc::{Address, BlockHeader, BlockTemplate};
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::thread;
 use std::time::Duration;
 use tokio::sync::RwLock;
 use tokio::{sync::mpsc, task};
@@ -79,19 +80,6 @@ impl Prover {
                 "Created {} prover thread pools with {} threads each",
                 thread_pools.len(),
                 pool_threads
-            );
-        } else {
-            let total_jobs = cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8;
-            for _ in 0..total_jobs {
-                let pool = ThreadPoolBuilder::new()
-                    .stack_size(8 * 1024 * 1024)
-                    .num_threads(1)
-                    .build()?;
-                thread_pools.push(pool);
-            }
-            debug!(
-                "Created {} prover thread pools with 1 thread each",
-                thread_pools.len()
             );
         }
 
@@ -212,17 +200,9 @@ impl Prover {
                 if let Some(cuda) = cuda {
                     for gpu_index in cuda {
                         for job_index in 0..cuda_jobs.unwrap_or(1) {
-                            let tp = thread_pools
-                                .get(
-                                    gpu_index as usize * cuda_jobs.unwrap_or(1) as usize
-                                        + job_index as usize,
-                                )
-                                .unwrap();
                             debug!(
-                                "Spawning CUDA worker on GPU {} job {} using tp id {}",
-                                gpu_index,
-                                job_index,
-                                gpu_index as u8 * cuda_jobs.unwrap_or(1) + job_index
+                                "Spawning CUDA thread on GPU {} job {}",
+                                gpu_index, job_index,
                             );
                             let wg = wg.clone();
 
@@ -232,7 +212,7 @@ impl Prover {
                             let node = node.clone();
                             let block_template = block_template.clone();
                             let total_proofs = total_proofs.clone();
-                            tp.spawn(move || {
+                            thread::spawn(move || {
                                 while !terminator.load(Ordering::SeqCst) {
                                     let block_height = block_template.block_height();
                                     if block_height != *(current_block.try_read().unwrap()) {
