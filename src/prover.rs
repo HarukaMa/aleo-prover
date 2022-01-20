@@ -215,7 +215,7 @@ impl Prover {
                             let node = node.clone();
                             let block_template = block_template.clone();
                             let total_proofs = total_proofs.clone();
-                            thread::Builder::new()
+                            let _ = thread::Builder::new()
                                 .name(format!(
                                     "prover-cuda-worker gpu {} job {}",
                                     gpu_index, job_index
