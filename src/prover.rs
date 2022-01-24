@@ -57,16 +57,16 @@ impl Prover {
         if threads % 12 == 0 {
             pool_count = threads / 12;
             pool_threads = 12;
+        } else if threads % 10 == 0 {
+            pool_count = threads / 10;
+            pool_threads = 10;
         } else if threads % 8 == 0 {
             pool_count = threads / 8;
             pool_threads = 8;
-        } else if threads % 6 == 0 {
+        } else {
             pool_count = threads / 6;
             pool_threads = 6;
-        } else {
-            pool_count = threads / 4;
-            pool_threads = 4;
-        };
+        }
         if cuda.is_none() {
             for index in 0..pool_count {
                 let pool = ThreadPoolBuilder::new()
@@ -76,7 +76,7 @@ impl Prover {
                     .build()?;
                 thread_pools.push(pool);
             }
-            debug!(
+            info!(
                 "Created {} prover thread pools with {} threads each",
                 thread_pools.len(),
                 pool_threads
