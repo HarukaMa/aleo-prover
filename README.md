@@ -85,6 +85,9 @@ snarkVM would load programs to all GPUs in the system but the prover will only u
 
 ## Changelog
 
+### 0.2.4
+GPU proving should be slightly faster (~5-10%).
+
 ### 0.2.3
 Changed the thread pool configuration for CPU proving.  
 Promoted the thread pool configuration log to info level.
