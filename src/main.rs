@@ -53,6 +53,14 @@ struct Opt {
     /// The above example will result in 8 jobs in total
     #[structopt(short = "j", long = "cuda-jobs")]
     jobs: Option<u8>,
+
+    #[cfg(feature = "enable-cuda")]
+    #[structopt(verbatim_doc_comment)]
+    /// CPU threads per GPU job, defaults to 1
+    /// Example: -g 0 -g 1 -j 4 -c 2
+    /// The above example will use 16 CPU threads in total
+    #[structopt(short = "c", long = "cuda-cpu-threads")]
+    cuda_cpu: Option<u8>,
 }
 
 #[tokio::main]
@@ -84,18 +92,21 @@ async fn main() {
     }
 
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
-    let cuda: Option<Vec<i16>>;
 
+    let cuda: Option<Vec<i16>>;
     let cuda_jobs: Option<u8>;
+    let cuda_cpu_threads: Option<u8>;
     #[cfg(feature = "enable-cuda")]
     {
         cuda = opt.cuda;
-        cuda_jobs = opt.jobs
+        cuda_jobs = opt.jobs;
+        cuda_cpu_threads = opt.cuda_cpu;
     }
     #[cfg(not(feature = "enable-cuda"))]
     {
         cuda = None;
         cuda_jobs = None;
+        cuda_cpu_threads = None;
     }
     if let Some(cuda) = cuda.clone() {
         if cuda.is_empty() {
@@ -108,14 +119,22 @@ async fn main() {
     let node = Node::init(opt.address, opt.pool);
     debug!("Node initialized");
 
-    let prover: Arc<Prover> =
-        match Prover::init(opt.address, threads, node.clone(), cuda, cuda_jobs).await {
-            Ok(prover) => prover,
-            Err(e) => {
-                error!("Unable to initialize prover: {}", e);
-                std::process::exit(1);
-            }
-        };
+    let prover: Arc<Prover> = match Prover::init(
+        opt.address,
+        threads,
+        node.clone(),
+        cuda,
+        cuda_jobs,
+        cuda_cpu_threads,
+    )
+    .await
+    {
+        Ok(prover) => prover,
+        Err(e) => {
+            error!("Unable to initialize prover: {}", e);
+            std::process::exit(1);
+        }
+    };
     debug!("Prover initialized");
 
     start(prover.router(), node.clone(), node.receiver());
