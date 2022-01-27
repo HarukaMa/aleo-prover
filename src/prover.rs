@@ -49,7 +49,6 @@ impl Prover {
         node: Arc<Node>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
-        cuda_cpu_threads: Option<u8>,
     ) -> Result<Arc<Self>> {
         let mut thread_pools: Vec<ThreadPool> = Vec::new();
         let pool_count;
@@ -86,15 +85,14 @@ impl Prover {
             for index in 0..total_jobs {
                 let pool = ThreadPoolBuilder::new()
                     .stack_size(8 * 1024 * 1024)
-                    .num_threads(cuda_cpu_threads.unwrap_or(1) as usize)
+                    .num_threads(2)
                     .thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
                     .build()?;
                 thread_pools.push(pool);
             }
             info!(
-                "Created {} prover thread pools with {} thread each",
+                "Created {} prover thread pools with 2 threads each",
                 thread_pools.len(),
-                cuda_cpu_threads.unwrap_or(1),
             );
         }
 
