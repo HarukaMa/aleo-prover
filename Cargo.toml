@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -15,7 +15,7 @@ rand = "0.8.4"
 num_cpus = "1.13.1"
 structopt = "0.3.25"
 rayon = "1.5.1"
-anyhow = "1.0.52"
+anyhow = "1.0.53"
 tracing = "0.1.29"
 tracing-subscriber = "0.3.6"
 tokio-util = "0.6.9"

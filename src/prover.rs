@@ -248,6 +248,14 @@ impl Prover {
                                         &mut thread_rng(),
                                         gpu_index,
                                     ) {
+                                        if block_height != current_block.load(Ordering::SeqCst) {
+                                            debug!(
+                                                "Terminating stale work: current {} latest {}",
+                                                block_height,
+                                                current_block.load(Ordering::SeqCst)
+                                            );
+                                            break;
+                                        }
                                         // Ensure the share difficulty target is met.
                                         let nonce = block_header.nonce();
                                         let proof = block_header.proof().clone();
@@ -315,6 +323,14 @@ impl Prover {
                                     &mut thread_rng(),
                                     -1,
                                 ) {
+                                    if block_height != current_block.load(Ordering::SeqCst) {
+                                        debug!(
+                                            "Terminating stale work: current {} latest {}",
+                                            block_height,
+                                            current_block.load(Ordering::SeqCst)
+                                        );
+                                        break;
+                                    }
                                     // Ensure the share difficulty target is met.
                                     let nonce = block_header.nonce();
                                     let proof = block_header.proof().clone();
