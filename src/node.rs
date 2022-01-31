@@ -10,7 +10,6 @@ use snarkvm::dpc::testnet2::Testnet2;
 use snarkvm::dpc::{Address, BlockHeader};
 use snarkvm::traits::Network;
 use std::collections::BTreeMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -24,7 +23,7 @@ use tracing::{debug, error, info, warn};
 
 pub struct Node {
     address: Address<Testnet2>,
-    operator: SocketAddr,
+    operator: String,
     router: Arc<Sender<SendMessage>>,
     receiver: Arc<Mutex<Receiver<SendMessage>>>,
 }
@@ -35,7 +34,7 @@ pub struct SendMessage {
 }
 
 impl Node {
-    pub fn init(address: Address<Testnet2>, operator: SocketAddr) -> Arc<Self> {
+    pub fn init(address: Address<Testnet2>, operator: String) -> Arc<Self> {
         let (router_tx, router_rx) = mpsc::channel(1024);
         Arc::new(Self {
             address,

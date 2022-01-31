@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -9,6 +9,8 @@ license = "GPL-3.0-or-later"
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
 snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "02721d37" }
+#snarkos = { path = "../../src/snarkOS" }
+#snarkos-storage = { path = "../../src/snarkOS/storage" }
 snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "53a22610" }
 snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "53a22610" }
 rand = "0.8.4"

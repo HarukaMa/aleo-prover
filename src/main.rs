@@ -3,13 +3,12 @@ mod prover;
 
 use snarkvm::dpc::testnet2::Testnet2;
 use snarkvm::dpc::Address;
-use std::net::SocketAddr;
+use std::net::ToSocketAddrs;
 use std::sync::Arc;
 use structopt::StructOpt;
 
 use crate::node::{start, Node};
 use crate::prover::Prover;
-#[cfg(vanity)]
 use snarkvm::dpc::{Account, AccountScheme};
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
@@ -22,12 +21,12 @@ struct Opt {
     debug: bool,
 
     /// Prover address (aleo1...)
-    #[structopt(short = "a", long = "address")]
-    address: Address<Testnet2>,
+    #[structopt(short = "a", long = "address", required_if("new_address", "false"))]
+    address: Option<Address<Testnet2>>,
 
     /// Pool address:port
-    #[structopt(short = "p", long = "pool")]
-    pool: SocketAddr,
+    #[structopt(short = "p", long = "pool", required_if("new_address", "false"))]
+    pool: Option<String>,
 
     /// Number of threads
     #[structopt(short = "t", long = "threads")]
@@ -36,6 +35,10 @@ struct Opt {
     /// Output log to file
     #[structopt(short = "o", long = "log")]
     log: Option<String>,
+
+    /// Generate a new address
+    #[structopt(long = "new-address")]
+    new_address: bool,
 
     #[cfg(feature = "enable-cuda")]
     #[structopt(verbatim_doc_comment)]
@@ -58,6 +61,18 @@ struct Opt {
 #[tokio::main]
 async fn main() {
     let opt = Opt::from_args();
+    if opt.new_address {
+        let account = Account::<Testnet2>::new(&mut rand::thread_rng());
+        println!();
+        println!("Private key: {}", account.private_key());
+        println!("   View key: {}", account.view_key());
+        println!("    Address: {}", account.address());
+        println!();
+        println!("WARNING: Make sure you have a backup of both private key and view key!");
+        println!("         Nobody can help you recover those keys if you lose them!");
+        println!();
+        return;
+    }
     let tracing_level = if opt.debug {
         tracing::Level::DEBUG
     } else {
@@ -83,6 +98,21 @@ async fn main() {
             .expect("unable to set global default subscriber");
     }
 
+    if opt.pool.is_none() {
+        error!("Pool address is required!");
+        std::process::exit(1);
+    }
+    if opt.address.is_none() {
+        error!("Prover address is required!");
+        std::process::exit(1);
+    }
+    let address = opt.address.unwrap();
+    let pool = opt.pool.unwrap();
+    if let Err(e) = pool.to_socket_addrs() {
+        error!("Invalid pool address {}: {}", pool, e);
+        std::process::exit(1);
+    }
+
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
 
     let cuda: Option<Vec<i16>>;
@@ -105,11 +135,11 @@ async fn main() {
     }
 
     info!("Starting prover");
-    let node = Node::init(opt.address, opt.pool);
+    let node = Node::init(address, pool);
     debug!("Node initialized");
 
     let prover: Arc<Prover> =
-        match Prover::init(opt.address, threads, node.clone(), cuda, cuda_jobs).await {
+        match Prover::init(address, threads, node.clone(), cuda, cuda_jobs).await {
             Ok(prover) => prover,
             Err(e) => {
                 error!("Unable to initialize prover: {}", e);
