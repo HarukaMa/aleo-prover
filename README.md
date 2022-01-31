@@ -26,16 +26,17 @@ Run `cargo build --release` to build the binary.
 Please refer to the usage help (`target/release/aleo-prover --help`):
 
 ```
-prover 0.2.2
+prover 0.2.6
 Standalone prover.
 
 USAGE:
     aleo-prover [FLAGS] [OPTIONS] --address <address> --pool <pool>
 
 FLAGS:
-    -d, --debug      Enable debug logging
-    -h, --help       Prints help information
-    -V, --version    Prints version information
+    -d, --debug          Enable debug logging
+    -h, --help           Prints help information
+        --new-address    Generate a new address
+    -V, --version        Prints version information
 
 OPTIONS:
     -a, --address <address>    Prover address (aleo1...)
