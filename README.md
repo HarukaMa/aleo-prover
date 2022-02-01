@@ -86,6 +86,9 @@ snarkVM would load programs to all GPUs in the system but the prover will only u
 
 ## Changelog
 
+### 0.2.7
+GPU proving should be slightly faster (~20%).
+
 ### 0.2.6
 You can now generate new Aleo addresses by using `--new-address` option.
 You can use domain names when specifying the pool address.
