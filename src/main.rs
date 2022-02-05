@@ -1,17 +1,18 @@
-mod node;
+mod client;
+mod message;
 mod prover;
 
-use snarkvm::dpc::testnet2::Testnet2;
-use snarkvm::dpc::Address;
-use std::net::ToSocketAddrs;
-use std::sync::Arc;
-use structopt::StructOpt;
+use std::{net::ToSocketAddrs, sync::Arc};
 
-use crate::node::{start, Node};
-use crate::prover::Prover;
-use snarkvm::dpc::{Account, AccountScheme};
+use snarkvm::dpc::{testnet2::Testnet2, Account, AccountScheme, Address};
+use structopt::StructOpt;
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
+
+use crate::{
+    client::{start, Client},
+    prover::Prover,
+};
 
 #[derive(Debug, StructOpt)]
 #[structopt(name = "prover", about = "Standalone prover.", setting = structopt::clap::AppSettings::ColoredHelp)]
@@ -24,7 +25,7 @@ struct Opt {
     #[structopt(short = "a", long = "address", required_if("new_address", "false"))]
     address: Option<Address<Testnet2>>,
 
-    /// Pool address:port
+    /// Pool server address
     #[structopt(short = "p", long = "pool", required_if("new_address", "false"))]
     pool: Option<String>,
 
@@ -88,14 +89,11 @@ async fn main() {
     // );
     if let Some(log) = opt.log {
         let file = std::fs::File::create(log).unwrap();
-        let file = tracing_subscriber::fmt::layer()
-            .with_writer(file)
-            .with_ansi(false);
+        let file = tracing_subscriber::fmt::layer().with_writer(file).with_ansi(false);
         tracing::subscriber::set_global_default(subscriber.with(file))
             .expect("unable to set global default subscriber");
     } else {
-        tracing::subscriber::set_global_default(subscriber)
-            .expect("unable to set global default subscriber");
+        tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
     if opt.pool.is_none() {
@@ -135,20 +133,24 @@ async fn main() {
     }
 
     info!("Starting prover");
-    let node = Node::init(address, pool);
-    debug!("Node initialized");
+    // if opt.old_protocol {
+    //     info!("Using old protocol");
+    //     let node = Node::init(address, pool);
+    //     debug!("Node initialized");
+    // }
 
-    let prover: Arc<Prover> =
-        match Prover::init(address, threads, node.clone(), cuda, cuda_jobs).await {
-            Ok(prover) => prover,
-            Err(e) => {
-                error!("Unable to initialize prover: {}", e);
-                std::process::exit(1);
-            }
-        };
+    let client = Client::init(address, pool);
+
+    let prover: Arc<Prover> = match Prover::init(threads, client.clone(), cuda, cuda_jobs).await {
+        Ok(prover) => prover,
+        Err(e) => {
+            error!("Unable to initialize prover: {}", e);
+            std::process::exit(1);
+        }
+    };
     debug!("Prover initialized");
 
-    start(prover.router(), node.clone(), node.receiver());
+    start(prover.sender(), client.clone());
 
     std::future::pending::<()>().await;
 }

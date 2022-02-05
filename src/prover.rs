@@ -1,52 +1,46 @@
-use crate::node::SendMessage;
-use crate::Node;
+use std::{
+    collections::VecDeque,
+    sync::{
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
+
 use anyhow::Result;
 use crossbeam::sync::WaitGroup;
 use futures::executor::block_on;
 use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use snarkos::{Data, Message};
-use snarkvm::dpc::testnet2::Testnet2;
-use snarkvm::dpc::{Address, BlockHeader, BlockTemplate};
-use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
+use snarkvm::dpc::{testnet2::Testnet2, BlockHeader, BlockTemplate};
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info};
 
+use crate::{message::ProverMessage, Client};
+
 pub struct Prover {
-    address: Address<Testnet2>,
     thread_pools: Arc<Vec<ThreadPool>>,
     cuda: Option<Vec<i16>>,
     cuda_jobs: Option<u8>,
-    router: Arc<mpsc::Sender<ProverWork>>,
-    node: Arc<Node>,
+    sender: Arc<mpsc::Sender<ProverEvent>>,
+    client: Arc<Client>,
     terminator: Arc<AtomicBool>,
     current_block: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
+    valid_shares: Arc<AtomicU32>,
+    invalid_shares: Arc<AtomicU32>,
 }
 
-#[derive(Debug)]
-pub struct ProverWork {
-    share_difficulty: u64,
-    block_template: BlockTemplate<Testnet2>,
-}
-
-impl ProverWork {
-    pub fn new(share_difficulty: u64, block_template: BlockTemplate<Testnet2>) -> Self {
-        Self {
-            share_difficulty,
-            block_template,
-        }
-    }
+#[allow(clippy::large_enum_variant)]
+pub enum ProverEvent {
+    NewWork(u64, BlockTemplate<Testnet2>),
+    Result(bool, Option<String>),
 }
 
 impl Prover {
     pub async fn init(
-        address: Address<Testnet2>,
         threads: u16,
-        node: Arc<Node>,
+        client: Arc<Client>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
@@ -90,30 +84,35 @@ impl Prover {
                     .build()?;
                 thread_pools.push(pool);
             }
-            info!(
-                "Created {} prover thread pools with 2 threads each",
-                thread_pools.len(),
-            );
+            info!("Created {} prover thread pools with 2 threads each", thread_pools.len(),);
         }
 
-        let (router_tx, mut router_rx) = mpsc::channel(1024);
+        let (sender, mut receiver) = mpsc::channel(1024);
         let terminator = Arc::new(AtomicBool::new(false));
         let prover = Arc::new(Self {
-            address,
             thread_pools: Arc::new(thread_pools),
             cuda,
             cuda_jobs,
-            router: Arc::new(router_tx),
-            node,
+            sender: Arc::new(sender),
+            client,
             terminator,
             current_block: Default::default(),
             total_proofs: Default::default(),
+            valid_shares: Default::default(),
+            invalid_shares: Default::default(),
         });
 
         let p = prover.clone();
         let _ = task::spawn(async move {
-            while let Some(work) = router_rx.recv().await {
-                p.new_work(work).await;
+            while let Some(msg) = receiver.recv().await {
+                match msg {
+                    ProverEvent::NewWork(difficulty, block_template) => {
+                        p.new_work(difficulty, block_template).await;
+                    }
+                    ProverEvent::Result(success, error) => {
+                        p.result(success, error).await;
+                    }
+                }
             }
         });
         debug!("Created prover message handler");
@@ -177,25 +176,66 @@ impl Prover {
         Ok(prover)
     }
 
-    pub fn router(&self) -> Arc<mpsc::Sender<ProverWork>> {
-        self.router.clone()
+    pub fn sender(&self) -> Arc<mpsc::Sender<ProverEvent>> {
+        self.sender.clone()
     }
 
-    async fn new_work(&self, work: ProverWork) {
-        let block_template = work.block_template;
+    async fn result(&self, success: bool, msg: Option<String>) {
+        if success {
+            let valid_minus_1 = self.valid_shares.fetch_add(1, Ordering::SeqCst);
+            let valid = valid_minus_1 + 1;
+            let invalid = self.invalid_shares.load(Ordering::SeqCst);
+            if let Some(msg) = msg {
+                info!(
+                    "Share accepted: {}   Total shares: {} / {} ({:.2}%)",
+                    msg,
+                    valid,
+                    valid + invalid,
+                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                );
+            } else {
+                info!(
+                    "Share accepted   Total shares: {} / {} ({:.2}%)",
+                    valid,
+                    valid + invalid,
+                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                );
+            }
+        } else {
+            let invalid_minus_1 = self.invalid_shares.fetch_add(1, Ordering::SeqCst);
+            let invalid = invalid_minus_1 + 1;
+            let valid = self.valid_shares.load(Ordering::SeqCst);
+            if let Some(msg) = msg {
+                info!(
+                    "Share rejected: {}   Total shares: {} / {} ({:.2}%)",
+                    msg,
+                    valid,
+                    valid + invalid,
+                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                );
+            } else {
+                info!(
+                    "Share rejected   Total shares: {} / {} ({:.2}%)",
+                    valid,
+                    valid + invalid,
+                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                );
+            }
+        }
+    }
+
+    async fn new_work(&self, share_difficulty: u64, block_template: BlockTemplate<Testnet2>) {
         let block_height = block_template.block_height();
         self.current_block.store(block_height, Ordering::SeqCst);
-        let share_difficulty = work.share_difficulty;
         info!(
-            "Received new work: block {}, share weight {}",
+            "Received new work: block {}, share target {}",
             block_template.block_height(),
             u64::MAX / share_difficulty
         );
 
         let current_block = self.current_block.clone();
         let terminator = self.terminator.clone();
-        let address = self.address;
-        let node = self.node.clone();
+        let client = self.client.clone();
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
@@ -214,21 +254,14 @@ impl Prover {
                     for gpu_index in cuda {
                         for job_index in 0..cuda_jobs.unwrap_or(1) {
                             let tp = thread_pools
-                                .get(
-                                    gpu_index as usize * cuda_jobs.unwrap_or(1) as usize
-                                        + job_index as usize,
-                                )
+                                .get(gpu_index as usize * cuda_jobs.unwrap_or(1) as usize + job_index as usize)
                                 .unwrap();
-                            debug!(
-                                "Spawning CUDA thread on GPU {} job {}",
-                                gpu_index, job_index,
-                            );
+                            debug!("Spawning CUDA thread on GPU {} job {}", gpu_index, job_index,);
                             let wg = wg.clone();
 
                             let current_block = current_block.clone();
                             let terminator = terminator.clone();
-                            let address = address;
-                            let node = node.clone();
+                            let client = client.clone();
                             let block_template = block_template.clone();
                             let total_proofs = total_proofs.clone();
                             tp.spawn(move || {
@@ -259,8 +292,7 @@ impl Prover {
                                         // Ensure the share difficulty target is met.
                                         let nonce = block_header.nonce();
                                         let proof = block_header.proof().clone();
-                                        let proof_difficulty =
-                                            proof.to_proof_difficulty().unwrap_or(u64::MAX);
+                                        let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
                                         if proof_difficulty > share_difficulty {
                                             debug!(
                                                 "Share difficulty target not met: {} > {}",
@@ -277,14 +309,8 @@ impl Prover {
                                         );
 
                                         // Send a `PoolResponse` to the operator.
-                                        let message = Message::PoolResponse(
-                                            address,
-                                            nonce,
-                                            Data::Object(proof),
-                                        );
-                                        if let Err(error) =
-                                            block_on(node.router().send(SendMessage { message }))
-                                        {
+                                        let message = ProverMessage::Submit(block_height, nonce, proof);
+                                        if let Err(error) = block_on(client.sender().send(message)) {
                                             error!("Failed to send PoolResponse: {}", error);
                                         }
                                         total_proofs.fetch_add(1, Ordering::SeqCst);
@@ -302,8 +328,7 @@ impl Prover {
 
                         let current_block = current_block.clone();
                         let terminator = terminator.clone();
-                        let address = address;
-                        let node = node.clone();
+                        let client = client.clone();
                         let block_template = block_template.clone();
                         let total_proofs = total_proofs.clone();
                         tp.spawn(move || {
@@ -334,8 +359,7 @@ impl Prover {
                                     // Ensure the share difficulty target is met.
                                     let nonce = block_header.nonce();
                                     let proof = block_header.proof().clone();
-                                    let proof_difficulty =
-                                        proof.to_proof_difficulty().unwrap_or(u64::MAX);
+                                    let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
                                     if proof_difficulty > share_difficulty {
                                         debug!(
                                             "Share difficulty target not met: {} > {}",
@@ -352,11 +376,8 @@ impl Prover {
                                     );
 
                                     // Send a `PoolResponse` to the operator.
-                                    let message =
-                                        Message::PoolResponse(address, nonce, Data::Object(proof));
-                                    if let Err(error) =
-                                        block_on(node.router().send(SendMessage { message }))
-                                    {
+                                    let message = ProverMessage::Submit(block_height, nonce, proof);
+                                    if let Err(error) = block_on(client.sender().send(message)) {
                                         error!("Failed to send PoolResponse: {}", error);
                                     }
                                     total_proofs.fetch_add(1, Ordering::SeqCst);

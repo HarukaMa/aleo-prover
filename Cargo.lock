@@ -30,9 +30,12 @@ dependencies = [
 
 [[package]]
 name = "aleo-prover"
-version = "0.2.7"
+version = "0.3.0"
 dependencies = [
  "anyhow",
+ "bincode",
+ "byteorder",
+ "bytes",
  "crossbeam",
  "futures",
  "futures-util",

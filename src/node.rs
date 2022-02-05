@@ -1,25 +1,33 @@
-use crate::prover::ProverWork;
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
+
 use futures_util::sink::SinkExt;
-use rand::thread_rng;
-use rand::Rng;
-use snarkos::environment::Prover;
-use snarkos::helpers::{NodeType, State};
-use snarkos::{Data, Message};
+use rand::{thread_rng, Rng};
+use snarkos::{
+    environment::Prover,
+    helpers::{NodeType, State},
+    Data,
+    Message,
+};
 use snarkos_storage::BlockLocators;
-use snarkvm::dpc::testnet2::Testnet2;
-use snarkvm::dpc::{Address, BlockHeader};
-use snarkvm::traits::Network;
-use std::collections::BTreeMap;
-use std::sync::Arc;
-use std::time::Duration;
-use tokio::net::TcpStream;
-use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{mpsc, Mutex};
-use tokio::task;
-use tokio::time::{sleep, timeout};
+use snarkvm::{
+    dpc::{testnet2::Testnet2, Address, BlockHeader},
+    traits::Network,
+};
+use tokio::{
+    net::TcpStream,
+    sync::{
+        mpsc,
+        mpsc::{Receiver, Sender},
+        Mutex,
+    },
+    task,
+    time::{sleep, timeout},
+};
 use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 use tracing::{debug, error, info, warn};
+
+use crate::{prover::ProverEvent, Client};
 
 pub struct Node {
     address: Address<Testnet2>,
@@ -53,20 +61,16 @@ impl Node {
     }
 }
 
-pub fn start(
-    prover_router: Arc<Sender<ProverWork>>,
-    node: Arc<Node>,
-    receiver: Arc<Mutex<Receiver<SendMessage>>>,
-) {
+pub fn start(prover_router: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
     task::spawn(async move {
+        let receiver = client.receiver();
         loop {
             info!("Connecting to operator...");
-            match timeout(Duration::from_secs(5), TcpStream::connect(&node.operator)).await {
+            match timeout(Duration::from_secs(5), TcpStream::connect(&client.pool)).await {
                 Ok(socket) => match socket {
                     Ok(socket) => {
-                        info!("Connected to {}", node.operator);
-                        let mut framed =
-                            Framed::new(socket, Message::<Testnet2, Prover<Testnet2>>::PeerRequest);
+                        info!("Connected to {}", client.pool);
+                        let mut framed = Framed::new(socket, Message::<Testnet2, Prover<Testnet2>>::PeerRequest);
                         let challenge = Message::ChallengeRequest(
                             12,
                             Testnet2::ALEO_MAXIMUM_FORK_DEPTH,
@@ -85,7 +89,7 @@ pub fn start(
                         loop {
                             tokio::select! {
                                 Some(message) = receiver.recv() => {
-                                    let message = message.message.clone();
+                                    let message = message.clone();
                                     debug!("Sending {} to operator", message.name());
                                     if let Err(e) = framed.send(message.clone()).await {
                                         error!("Error sending {}: {:?}", message.name(), e);
@@ -129,7 +133,7 @@ pub fn start(
                                                 }
                                             }
                                             Message::Pong(..) => {
-                                                let register = Message::<Testnet2, Prover<Testnet2>>::PoolRegister(node.address);
+                                                let register = Message::<Testnet2, Prover<Testnet2>>::PoolRegister(client.address);
                                                 if let Err(e) = framed.send(register).await {
                                                     error!("Error sending pool register: {:?}", e);
                                                 } else {
