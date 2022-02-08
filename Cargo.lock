@@ -32,6 +32,7 @@ dependencies = [
 name = "aleo-prover"
 version = "0.3.0"
 dependencies = [
+ "ansi_term",
  "anyhow",
  "bincode",
  "byteorder",

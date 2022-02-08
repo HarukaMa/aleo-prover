@@ -7,6 +7,7 @@ use std::{
     time::Duration,
 };
 
+use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use crossbeam::sync::WaitGroup;
 use futures::executor::block_on;
@@ -161,13 +162,16 @@ impl Prover {
                 let m30 = *log.get(30).unwrap_or(&0);
                 let m60 = log.pop_front().unwrap_or_default();
                 info!(
-                    "Total proofs: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
-                    proofs,
-                    calculate_proof_rate(proofs, m1, 1),
-                    calculate_proof_rate(proofs, m5, 5),
-                    calculate_proof_rate(proofs, m15, 15),
-                    calculate_proof_rate(proofs, m30, 30),
-                    calculate_proof_rate(proofs, m60, 60),
+                    "{}",
+                    Cyan.normal().paint(format!(
+                        "Total proofs: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
+                        proofs,
+                        calculate_proof_rate(proofs, m1, 1),
+                        calculate_proof_rate(proofs, m5, 5),
+                        calculate_proof_rate(proofs, m15, 15),
+                        calculate_proof_rate(proofs, m30, 30),
+                        calculate_proof_rate(proofs, m60, 60),
+                    ))
                 );
             }
         });
@@ -187,18 +191,24 @@ impl Prover {
             let invalid = self.invalid_shares.load(Ordering::SeqCst);
             if let Some(msg) = msg {
                 info!(
-                    "Share accepted: {}   Total shares: {} / {} ({:.2}%)",
-                    msg,
-                    valid,
-                    valid + invalid,
-                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                    "{}",
+                    Green.normal().paint(format!(
+                        "Share accepted: {}  {} / {} ({:.2}%)",
+                        msg,
+                        valid,
+                        valid + invalid,
+                        (valid as f64 / (valid + invalid) as f64) * 100.0
+                    ))
                 );
             } else {
                 info!(
-                    "Share accepted   Total shares: {} / {} ({:.2}%)",
-                    valid,
-                    valid + invalid,
-                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                    "{}",
+                    Green.normal().paint(format!(
+                        "Share accepted  {} / {} ({:.2}%)",
+                        valid,
+                        valid + invalid,
+                        (valid as f64 / (valid + invalid) as f64) * 100.0
+                    ))
                 );
             }
         } else {
@@ -207,18 +217,24 @@ impl Prover {
             let valid = self.valid_shares.load(Ordering::SeqCst);
             if let Some(msg) = msg {
                 info!(
-                    "Share rejected: {}   Total shares: {} / {} ({:.2}%)",
-                    msg,
-                    valid,
-                    valid + invalid,
-                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                    "{}",
+                    Red.normal().paint(format!(
+                        "Share rejected: {}  {} / {} ({:.2}%)",
+                        msg,
+                        valid,
+                        valid + invalid,
+                        (valid as f64 / (valid + invalid) as f64) * 100.0
+                    ))
                 );
             } else {
                 info!(
-                    "Share rejected   Total shares: {} / {} ({:.2}%)",
-                    valid,
-                    valid + invalid,
-                    (valid as f64 / (valid + invalid) as f64) * 100.0
+                    "{}",
+                    Red.normal().paint(format!(
+                        "Share rejected  {} / {} ({:.2}%)",
+                        valid,
+                        valid + invalid,
+                        (valid as f64 / (valid + invalid) as f64) * 100.0
+                    ))
                 );
             }
         }

@@ -61,6 +61,9 @@ struct Opt {
 
 #[tokio::main]
 async fn main() {
+    #[cfg(windows)]
+    let _ = ansi_term::enable_ansi_support();
+
     let opt = Opt::from_args();
     if opt.new_address {
         let account = Account::<Testnet2>::new(&mut rand::thread_rng());
