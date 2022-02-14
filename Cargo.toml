@@ -39,7 +39,7 @@ features = [
 ]
 
 [features]
-enable-cuda = ["snarkvm/cuda"]
+cuda = ["snarkvm/cuda"]
 
 [profile.dev]
 opt-level = 1
