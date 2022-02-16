@@ -4,7 +4,7 @@ mod prover;
 
 use std::{net::ToSocketAddrs, sync::Arc};
 
-use snarkvm::dpc::{testnet2::Testnet2, Account, AccountScheme, Address};
+use snarkvm::dpc::{testnet2::Testnet2, Account, Address};
 use structopt::StructOpt;
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
