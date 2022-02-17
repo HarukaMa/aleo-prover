@@ -9,8 +9,6 @@ use std::{
 
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
-use crossbeam::sync::WaitGroup;
-use futures::executor::block_on;
 use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkvm::dpc::{testnet2::Testnet2, BlockHeader, BlockTemplate};
@@ -20,7 +18,7 @@ use tracing::{debug, error, info};
 use crate::{message::ProverMessage, Client};
 
 pub struct Prover {
-    thread_pools: Arc<Vec<ThreadPool>>,
+    thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
     cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
@@ -45,7 +43,7 @@ impl Prover {
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
-        let mut thread_pools: Vec<ThreadPool> = Vec::new();
+        let mut thread_pools: Vec<Arc<ThreadPool>> = Vec::new();
         let pool_count;
         let pool_threads;
         if threads % 12 == 0 {
@@ -68,7 +66,7 @@ impl Prover {
                     .num_threads(pool_threads as usize)
                     .thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
                     .build()?;
-                thread_pools.push(pool);
+                thread_pools.push(Arc::new(pool));
             }
             info!(
                 "Created {} prover thread pools with {} threads each",
@@ -83,7 +81,7 @@ impl Prover {
                     .num_threads(2)
                     .thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
                     .build()?;
-                thread_pools.push(pool);
+                thread_pools.push(Arc::new(pool));
             }
             info!("Created {} prover thread pools with 2 threads each", thread_pools.len(),);
         }
@@ -265,7 +263,7 @@ impl Prover {
             }
 
             let _ = task::spawn(async move {
-                let wg = WaitGroup::new();
+                let mut joins = Vec::new();
                 if let Some(cuda) = cuda {
                     for gpu_index in cuda {
                         for job_index in 0..cuda_jobs.unwrap_or(1) {
@@ -273,16 +271,19 @@ impl Prover {
                                 .get(gpu_index as usize * cuda_jobs.unwrap_or(1) as usize + job_index as usize)
                                 .unwrap();
                             debug!("Spawning CUDA thread on GPU {} job {}", gpu_index, job_index,);
-                            let wg = wg.clone();
 
                             let current_block = current_block.clone();
                             let terminator = terminator.clone();
                             let client = client.clone();
                             let block_template = block_template.clone();
                             let total_proofs = total_proofs.clone();
-                            tp.spawn(move || {
+                            let tp = tp.clone();
+                            joins.push(task::spawn(async move {
                                 while !terminator.load(Ordering::SeqCst) {
+                                    let terminator = terminator.clone();
+                                    let block_template = block_template.clone();
                                     let block_height = block_template.block_height();
+                                    let tp = tp.clone();
                                     if block_height != current_block.load(Ordering::SeqCst) {
                                         debug!(
                                             "Terminating stale work: current {} latest {}",
@@ -291,12 +292,18 @@ impl Prover {
                                         );
                                         break;
                                     }
-                                    if let Ok(block_header) = BlockHeader::mine_once_unchecked(
-                                        &block_template,
-                                        &terminator,
-                                        &mut thread_rng(),
-                                        gpu_index,
-                                    ) {
+                                    if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
+                                        tp.install(|| {
+                                            BlockHeader::mine_once_unchecked(
+                                                &block_template,
+                                                &terminator,
+                                                &mut thread_rng(),
+                                                gpu_index,
+                                            )
+                                        })
+                                    })
+                                    .await
+                                    {
                                         if block_height != current_block.load(Ordering::SeqCst) {
                                             debug!(
                                                 "Terminating stale work: current {} latest {}",
@@ -326,29 +333,28 @@ impl Prover {
 
                                         // Send a `PoolResponse` to the operator.
                                         let message = ProverMessage::Submit(block_height, nonce, proof);
-                                        if let Err(error) = block_on(client.sender().send(message)) {
+                                        if let Err(error) = client.sender().send(message).await {
                                             error!("Failed to send PoolResponse: {}", error);
                                         }
                                         total_proofs.fetch_add(1, Ordering::SeqCst);
                                     }
                                 }
-                                drop(wg);
-                            });
+                            }));
                         }
                     }
-                    wg.wait();
-                    terminator.store(false, Ordering::SeqCst);
                 } else {
-                    for tp in &*thread_pools {
-                        let wg = wg.clone();
-
+                    for tp in thread_pools.iter() {
                         let current_block = current_block.clone();
                         let terminator = terminator.clone();
                         let client = client.clone();
                         let block_template = block_template.clone();
                         let total_proofs = total_proofs.clone();
-                        tp.spawn(move || {
+                        let tp = tp.clone();
+                        joins.push(task::spawn(async move {
                             while !terminator.load(Ordering::SeqCst) {
+                                let terminator = terminator.clone();
+                                let block_template = block_template.clone();
+                                let tp = tp.clone();
                                 let block_height = block_template.block_height();
                                 if block_height != current_block.load(Ordering::SeqCst) {
                                     debug!(
@@ -358,12 +364,18 @@ impl Prover {
                                     );
                                     break;
                                 }
-                                if let Ok(block_header) = BlockHeader::mine_once_unchecked(
-                                    &block_template,
-                                    &terminator,
-                                    &mut thread_rng(),
-                                    -1,
-                                ) {
+                                if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
+                                    tp.install(|| {
+                                        BlockHeader::mine_once_unchecked(
+                                            &block_template,
+                                            &terminator,
+                                            &mut thread_rng(),
+                                            -1,
+                                        )
+                                    })
+                                })
+                                .await
+                                {
                                     if block_height != current_block.load(Ordering::SeqCst) {
                                         debug!(
                                             "Terminating stale work: current {} latest {}",
@@ -393,18 +405,17 @@ impl Prover {
 
                                     // Send a `PoolResponse` to the operator.
                                     let message = ProverMessage::Submit(block_height, nonce, proof);
-                                    if let Err(error) = block_on(client.sender().send(message)) {
+                                    if let Err(error) = client.sender().send(message).await {
                                         error!("Failed to send PoolResponse: {}", error);
                                     }
                                     total_proofs.fetch_add(1, Ordering::SeqCst);
                                 }
                             }
-                            drop(wg);
-                        })
+                        }));
                     }
-                    wg.wait();
-                    terminator.store(false, Ordering::SeqCst);
                 }
+                futures::future::join_all(joins).await;
+                terminator.store(false, Ordering::SeqCst);
             });
         });
     }

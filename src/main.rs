@@ -1,3 +1,4 @@
+#[forbid(unsafe_code)]
 mod client;
 mod message;
 mod prover;
