@@ -26,7 +26,7 @@ Run `cargo build --release` to build the binary.
 Please refer to the usage help (`target/release/aleo-prover --help`):
 
 ```
-prover 0.2.6
+prover 0.3.0
 Standalone prover.
 
 USAGE:
@@ -48,7 +48,7 @@ OPTIONS:
                                Example: -g 0 -g 1 -j 4
                                The above example will result in 8 jobs in total
     -o, --log <log>            Output log to file
-    -p, --pool <pool>          Pool address:port
+    -p, --pool <pool>          Pool server address
     -t, --threads <threads>    Number of threads
 ```
 
