@@ -86,6 +86,11 @@ snarkVM would load programs to all GPUs in the system but the prover will only u
 
 ## Changelog
 
+### 0.3.0
+Added support for the new pool server.
+Dropped support for directly connecting to operator nodes.
+Fixed a bug that caused the prover to block the networking thread.
+
 ### 0.2.7
 GPU proving should be slightly faster (~20%).
 
