@@ -87,19 +87,19 @@ snarkVM would load programs to all GPUs in the system but the prover will only u
 ## Changelog
 
 ### 0.3.0
-Added support for the new pool server.
-Dropped support for directly connecting to operator nodes.
-Fixed a bug that caused the prover to block the networking thread.
+Added support for the new pool server.  
+Dropped support for directly connecting to operator nodes.  
+Fixed a bug that caused the prover to block the networking thread.  
 
 ### 0.2.7
 GPU proving should be slightly faster (~20%).
 
 ### 0.2.6
-You can now generate new Aleo addresses by using `--new-address` option.
+You can now generate new Aleo addresses by using `--new-address` option.  
 You can use domain names when specifying the pool address.
 
 ### 0.2.5
-Stopped the prover from sending stale shares to pool.
+Stopped the prover from sending stale shares to pool.  
 Note that you might see the speed reported by the prover to drop a little. However, the actual valid shares are not affected. 
 
 ### 0.2.4
