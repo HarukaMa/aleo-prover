@@ -306,6 +306,15 @@ impl Prover {
         let total_proofs = self.total_proofs.clone();
         let (terminator, ready, pool) = pool;
 
+        // Don't remove it. Eliminate two block running at the same time.
+        if block_height != current_block.load(Ordering::SeqCst) {
+            debug!(
+                "Terminating stale work before entering while loop: current {} latest {}",
+                block_height,
+                current_block.load(Ordering::SeqCst)
+            );
+            return;
+        }
         // Work until the pool receive a new block.
         while !terminator.load(Ordering::SeqCst) {
             // Set "ready" to false to indicate that pool is working
@@ -357,7 +366,7 @@ impl Prover {
                     continue;
                 }
 
-                info!(
+                debug!(
                     "Share found for block {} with weight {}",
                     block_height,
                     u64::MAX / proof_difficulty
@@ -372,7 +381,7 @@ impl Prover {
             } else {
                 // Stale work has been terminated, the pool is ready now.
                 ready.store(true, Ordering::SeqCst);
-                info!("pool cleaned, stale height {}", block_height);
+                debug!("pool cleaned, stale height {}", block_height);
                 break;
             }
         }
