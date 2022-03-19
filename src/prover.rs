@@ -118,7 +118,7 @@ impl Prover {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     ProverEvent::NewWork(difficulty, block_template) => {
-                        p.new_work(difficulty, block_template).await;
+                        p.add_new_work(difficulty, block_template);
                     }
                     ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
@@ -229,7 +229,7 @@ impl Prover {
         }
     }
 
-    async fn new_work(&self, share_difficulty: u64, block_template: BlockTemplate<Testnet2>) {
+    fn add_new_work(&self, share_difficulty: u64, block_template: BlockTemplate<Testnet2>) {
         let block_template = Arc::new(block_template);
         let block_height = block_template.block_height();
         self.current_block.store(block_height, Ordering::SeqCst);
