@@ -3,15 +3,17 @@ use futures_util::sink::SinkExt;
 use snarkvm::dpc::{testnet2::Testnet2, BlockTemplate};
 use snarkvm::utilities::FromBytes;
 use std::fs::File;
+use tokio::sync::oneshot;
 use std::process::Command;
 use std::time::Duration;
+use tokio::sync::mpsc::channel;
 use tokio::task;
 use tokio::{net::TcpListener, time::sleep};
-// use tokio_stream::StreamExt;
+use tokio_stream::StreamExt;
 use tokio_util::codec::Framed;
 use tracing::{error, info};
 
-/// Usage: ./test <notify_interval_in_millions>
+/// Usage: cargo run --bin test -- <notify_interval_in_millions>
 #[tokio::main]
 async fn main() {
     let subscriber = tracing_subscriber::fmt::Subscriber::builder()
@@ -23,9 +25,10 @@ async fn main() {
     let interval = std::env::args()
         .collect::<Vec<String>>()
         .get(1)
-        .unwrap()
+        .unwrap_or(&"15000".to_string())
         .parse::<u64>()
         .unwrap();
+    info!("notify interval: {}ms", interval);
     start_fake_server(interval).await;
 
     let prover = Command::new("cargo")
@@ -41,6 +44,8 @@ async fn main() {
         .status()
         .unwrap();
     info!("exit: {}", prover);
+
+    std::future::pending::<()>().await;
 }
 
 async fn start_fake_server(interval: u64) {
@@ -53,22 +58,54 @@ async fn start_fake_server(interval: u64) {
     info!("templates generated");
 
     let listener = TcpListener::bind(format!("0.0.0.0:{}", 9090)).await.unwrap();
+    let (tx, mut rx) = channel(1);
+    let (one_t, one_r) = oneshot::channel();
     task::spawn(async move {
-        let templates = templates;
         match listener.accept().await {
             Ok((stream, peer)) => {
                 info!("new connection from prover: {}", peer);
                 let mut frame = Framed::new(stream, ProverMessage::Canary);
-                for i in 0..20 {
-                    let template = templates[i % 20].clone();
-                    info!("sending height: {}", template.block_height());
-                    frame.send(ProverMessage::Notify(template, u64::MAX)).await.unwrap();
-                    sleep(Duration::from_millis(interval)).await;
+                if let Some(Ok(ProverMessage::Authorize(_, _, _))) = frame.next().await {
+                    one_t.send(()).unwrap();
+                } else {
+                    error!("authorize failed");
+                }
+                loop {
+                    tokio::select! {
+                        Some(msg) = rx.recv() => {
+                            if let Err(_) = frame.send(msg).await {
+                                error!("Failed to send message to prover");
+                            }
+                        }
+                        result = frame.next() => match result {
+                           Some(Ok(msg)) => {
+                               match msg {
+                                   ProverMessage::Submit(height, _, _) => {
+                                        info!("received submit from prover: {}", height);
+                                   }
+                                   _ => {}
+                               }
+                           }
+                           _ => {}
+                       }
+                    }
                 }
             }
             Err(e) => {
                 error!("Error accepting connection: {:?}", e);
             }
+        }
+    });
+
+    task::spawn(async move {
+        let templates = templates;
+        one_r.await.unwrap();
+        for i in 0..20 {
+            let template = templates[i % 20].clone();
+            info!("sending height: {}", template.block_height());
+            let msg = ProverMessage::Notify(template, u64::MAX);
+            let _ = tx.send(msg).await;
+            sleep(Duration::from_millis(interval)).await;
         }
     });
 }
