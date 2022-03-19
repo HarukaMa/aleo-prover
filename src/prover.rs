@@ -230,6 +230,7 @@ impl Prover {
     }
 
     async fn new_work(&self, share_difficulty: u64, block_template: BlockTemplate<Testnet2>) {
+        let block_template = Arc::new(block_template);
         let block_height = block_template.block_height();
         self.current_block.store(block_height, Ordering::SeqCst);
         info!(
@@ -284,7 +285,7 @@ impl Prover {
 
     async fn work_in_pool_cpu(
         &self,
-        block_template: BlockTemplate<Testnet2>,
+        block_template: Arc<BlockTemplate<Testnet2>>,
         pool: (Arc<AtomicBool>, Arc<AtomicBool>, Arc<ThreadPool>),
         share_difficulty: u64,
     ) {
@@ -294,7 +295,7 @@ impl Prover {
     // TODO: refactor
     async fn work_in_pool_gpu(
         &self,
-        block_template: BlockTemplate<Testnet2>,
+        block_template: Arc<BlockTemplate<Testnet2>>,
         pool: (Arc<AtomicBool>, Arc<AtomicBool>, Arc<ThreadPool>),
         share_difficulty: u64,
         gpu_index: i16,
@@ -324,9 +325,16 @@ impl Prover {
                 debug!("Spawning CUDA thread on GPU {}", gpu_index);
             }
 
-            if let Ok(block_header) = pool.install(|| {
-                BlockHeader::mine_once_unchecked(&block_template, &terminator, &mut thread_rng(), gpu_index)
-            }) {
+            let pool = pool.clone();
+            let terminator = terminator.clone();
+            let block_template = block_template.clone();
+            if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
+                pool.install(|| {
+                    BlockHeader::mine_once_unchecked(&block_template, &terminator, &mut thread_rng(), gpu_index)
+                })
+            })
+            .await
+            {
                 if block_height != current_block.load(Ordering::SeqCst) {
                     debug!(
                         "Terminating stale work after computing: current {} latest {}",
