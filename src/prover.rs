@@ -41,7 +41,7 @@ pub enum ProverEvent {
 }
 
 impl Prover {
-    pub async fn init(
+    pub  fn init(
         threads: u16,
         client: Arc<Client>,
         cuda: Option<Vec<i16>>,
