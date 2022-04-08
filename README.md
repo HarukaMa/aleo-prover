@@ -74,7 +74,7 @@ Before 0.2.3 the prover could use 4 threads per pool in worse case scenario whic
 
 GPU support is added in version 0.2.0.
 
-To enable GPU support, use `cargo build --release --features enable-cuda` when building the binary. Obviously you will need to install the CUDA runtime.
+To enable GPU support, use `cargo build --release --features cuda` when building the binary. Obviously you will need to install the CUDA runtime.
 
 Use `-g` option to enable GPU support. To use multiple GPUs, use `-g` multiple times with different GPU indexes.
 

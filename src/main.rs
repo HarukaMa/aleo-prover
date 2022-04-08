@@ -42,7 +42,7 @@ struct Opt {
     #[structopt(long = "new-address")]
     new_address: bool,
 
-    #[cfg(feature = "enable-cuda")]
+    #[cfg(feature = "cuda")]
     #[structopt(verbatim_doc_comment)]
     /// Indexes of GPUs to use (starts from 0)
     /// Specify multiple times to use multiple GPUs
@@ -51,7 +51,7 @@ struct Opt {
     #[structopt(short = "g", long = "cuda")]
     cuda: Option<Vec<i16>>,
 
-    #[cfg(feature = "enable-cuda")]
+    #[cfg(feature = "cuda")]
     #[structopt(verbatim_doc_comment)]
     /// Parallel jobs per GPU, defaults to 1
     /// Example: -g 0 -g 1 -j 4
@@ -119,12 +119,12 @@ async fn main() {
 
     let cuda: Option<Vec<i16>>;
     let cuda_jobs: Option<u8>;
-    #[cfg(feature = "enable-cuda")]
+    #[cfg(feature = "cuda")]
     {
         cuda = opt.cuda;
         cuda_jobs = opt.jobs;
     }
-    #[cfg(not(feature = "enable-cuda"))]
+    #[cfg(not(feature = "cuda"))]
     {
         cuda = None;
         cuda_jobs = None;
