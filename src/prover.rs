@@ -271,147 +271,31 @@ impl Prover {
                                 .get(gpu_index as usize * cuda_jobs.unwrap_or(1) as usize + job_index as usize)
                                 .unwrap();
                             debug!("Spawning CUDA thread on GPU {} job {}", gpu_index, job_index,);
-
-                            let current_block = current_block.clone();
-                            let terminator = terminator.clone();
-                            let client = client.clone();
-                            let block_template = block_template.clone();
-                            let total_proofs = total_proofs.clone();
-                            let tp = tp.clone();
-                            joins.push(task::spawn(async move {
-                                while !terminator.load(Ordering::SeqCst) {
-                                    let terminator = terminator.clone();
-                                    let block_template = block_template.clone();
-                                    let block_height = block_template.block_height();
-                                    let tp = tp.clone();
-                                    if block_height != current_block.load(Ordering::SeqCst) {
-                                        debug!(
-                                            "Terminating stale work: current {} latest {}",
-                                            block_height,
-                                            current_block.load(Ordering::SeqCst)
-                                        );
-                                        break;
-                                    }
-                                    if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
-                                        tp.install(|| {
-                                            BlockHeader::mine_once_unchecked(
-                                                &block_template,
-                                                &terminator,
-                                                &mut thread_rng(),
-                                                gpu_index,
-                                            )
-                                        })
-                                    })
-                                    .await
-                                    {
-                                        if block_height != current_block.load(Ordering::SeqCst) {
-                                            debug!(
-                                                "Terminating stale work: current {} latest {}",
-                                                block_height,
-                                                current_block.load(Ordering::SeqCst)
-                                            );
-                                            break;
-                                        }
-                                        // Ensure the share difficulty target is met.
-                                        let nonce = block_header.nonce();
-                                        let proof = block_header.proof().clone();
-                                        let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
-                                        if proof_difficulty > share_difficulty {
-                                            debug!(
-                                                "Share difficulty target not met: {} > {}",
-                                                proof_difficulty, share_difficulty
-                                            );
-                                            total_proofs.fetch_add(1, Ordering::SeqCst);
-                                            continue;
-                                        }
-
-                                        info!(
-                                            "Share found for block {} with weight {}",
-                                            block_height,
-                                            u64::MAX / proof_difficulty
-                                        );
-
-                                        // Send a `PoolResponse` to the operator.
-                                        let message = ProverMessage::Submit(block_height, nonce, proof);
-                                        if let Err(error) = client.sender().send(message).await {
-                                            error!("Failed to send PoolResponse: {}", error);
-                                        }
-                                        total_proofs.fetch_add(1, Ordering::SeqCst);
-                                    }
-                                }
-                            }));
+                            work_with_gpu(
+                                &current_block,
+                                &terminator,
+                                &client,
+                                &block_template,
+                                &total_proofs,
+                                tp,
+                                &mut joins,
+                                gpu_index,
+                                share_difficulty,
+                            );
                         }
                     }
                 } else {
                     for tp in thread_pools.iter() {
-                        let current_block = current_block.clone();
-                        let terminator = terminator.clone();
-                        let client = client.clone();
-                        let block_template = block_template.clone();
-                        let total_proofs = total_proofs.clone();
-                        let tp = tp.clone();
-                        joins.push(task::spawn(async move {
-                            while !terminator.load(Ordering::SeqCst) {
-                                let terminator = terminator.clone();
-                                let block_template = block_template.clone();
-                                let tp = tp.clone();
-                                let block_height = block_template.block_height();
-                                if block_height != current_block.load(Ordering::SeqCst) {
-                                    debug!(
-                                        "Terminating stale work: current {} latest {}",
-                                        block_height,
-                                        current_block.load(Ordering::SeqCst)
-                                    );
-                                    break;
-                                }
-                                if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
-                                    tp.install(|| {
-                                        BlockHeader::mine_once_unchecked(
-                                            &block_template,
-                                            &terminator,
-                                            &mut thread_rng(),
-                                            -1,
-                                        )
-                                    })
-                                })
-                                .await
-                                {
-                                    if block_height != current_block.load(Ordering::SeqCst) {
-                                        debug!(
-                                            "Terminating stale work: current {} latest {}",
-                                            block_height,
-                                            current_block.load(Ordering::SeqCst)
-                                        );
-                                        break;
-                                    }
-                                    // Ensure the share difficulty target is met.
-                                    let nonce = block_header.nonce();
-                                    let proof = block_header.proof().clone();
-                                    let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
-                                    if proof_difficulty > share_difficulty {
-                                        debug!(
-                                            "Share difficulty target not met: {} > {}",
-                                            proof_difficulty, share_difficulty
-                                        );
-                                        total_proofs.fetch_add(1, Ordering::SeqCst);
-                                        continue;
-                                    }
-
-                                    info!(
-                                        "Share found for block {} with weight {}",
-                                        block_height,
-                                        u64::MAX / proof_difficulty
-                                    );
-
-                                    // Send a `PoolResponse` to the operator.
-                                    let message = ProverMessage::Submit(block_height, nonce, proof);
-                                    if let Err(error) = client.sender().send(message).await {
-                                        error!("Failed to send PoolResponse: {}", error);
-                                    }
-                                    total_proofs.fetch_add(1, Ordering::SeqCst);
-                                }
-                            }
-                        }));
+                        work_with_cpu(
+                            &current_block,
+                            &terminator,
+                            &client,
+                            &block_template,
+                            &total_proofs,
+                            tp,
+                            &mut joins,
+                            share_difficulty,
+                        );
                     }
                 }
                 futures::future::join_all(joins).await;
@@ -419,4 +303,103 @@ impl Prover {
             });
         });
     }
+}
+
+fn work_with_cpu(
+    current_block: &Arc<AtomicU32>,
+    terminator: &Arc<AtomicBool>,
+    client: &Arc<Client>,
+    block_template: &BlockTemplate<Testnet2>,
+    total_proofs: &Arc<AtomicU32>,
+    tp: &Arc<ThreadPool>,
+    joins: &mut Vec<task::JoinHandle<()>>,
+    share_difficulty: u64,
+) {
+    work_with_gpu(
+        current_block,
+        terminator,
+        client,
+        block_template,
+        total_proofs,
+        tp,
+        joins,
+        -1,
+        share_difficulty,
+    )
+}
+
+fn work_with_gpu(
+    current_block: &Arc<AtomicU32>,
+    terminator: &Arc<AtomicBool>,
+    client: &Arc<Client>,
+    block_template: &BlockTemplate<Testnet2>,
+    total_proofs: &Arc<AtomicU32>,
+    tp: &Arc<ThreadPool>,
+    joins: &mut Vec<task::JoinHandle<()>>,
+    gpu_index: i16,
+    share_difficulty: u64,
+) {
+    let current_block = current_block.clone();
+    let terminator = terminator.clone();
+    let client = client.clone();
+    let block_template = block_template.clone();
+    let total_proofs = total_proofs.clone();
+    let tp = tp.clone();
+    joins.push(task::spawn(async move {
+        while !terminator.load(Ordering::SeqCst) {
+            let terminator = terminator.clone();
+            let block_template = block_template.clone();
+            let block_height = block_template.block_height();
+            let tp = tp.clone();
+            if block_height != current_block.load(Ordering::SeqCst) {
+                debug!(
+                    "Terminating stale work: current {} latest {}",
+                    block_height,
+                    current_block.load(Ordering::SeqCst)
+                );
+                break;
+            }
+            if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
+                tp.install(|| {
+                    BlockHeader::mine_once_unchecked(&block_template, &terminator, &mut thread_rng(), gpu_index)
+                })
+            })
+            .await
+            {
+                if block_height != current_block.load(Ordering::SeqCst) {
+                    debug!(
+                        "Terminating stale work: current {} latest {}",
+                        block_height,
+                        current_block.load(Ordering::SeqCst)
+                    );
+                    break;
+                }
+                // Ensure the share difficulty target is met.
+                let nonce = block_header.nonce();
+                let proof = block_header.proof().clone();
+                let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
+                if proof_difficulty > share_difficulty {
+                    debug!(
+                        "Share difficulty target not met: {} > {}",
+                        proof_difficulty, share_difficulty
+                    );
+                    total_proofs.fetch_add(1, Ordering::SeqCst);
+                    continue;
+                }
+
+                info!(
+                    "Share found for block {} with weight {}",
+                    block_height,
+                    u64::MAX / proof_difficulty
+                );
+
+                // Send a `PoolResponse` to the operator.
+                let message = ProverMessage::Submit(block_height, nonce, proof);
+                if let Err(error) = client.sender().send(message).await {
+                    error!("Failed to send PoolResponse: {}", error);
+                }
+                total_proofs.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+    }));
 }
