@@ -17,13 +17,14 @@ use tracing::{debug, error, info};
 
 use crate::{message::ProverMessage, Client};
 
+type Ready = Arc<AtomicBool>;
+type Terminator = Arc<AtomicBool>;
 pub struct Prover {
-    thread_pools: Arc<Vec<Arc<ThreadPool>>>,
+    thread_pools: Arc<Vec<(Arc<ThreadPool>, Ready, Terminator)>>,
     cuda: Option<Vec<i16>>,
     cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<Client>,
-    terminator: Arc<AtomicBool>,
     current_block: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
@@ -43,7 +44,7 @@ impl Prover {
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
-        let mut thread_pools: Vec<Arc<ThreadPool>> = Vec::new();
+        let mut thread_pools = Vec::new();
         let pool_count;
         let pool_threads;
         if threads % 12 == 0 {
@@ -66,7 +67,11 @@ impl Prover {
                     .num_threads(pool_threads as usize)
                     .thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
                     .build()?;
-                thread_pools.push(Arc::new(pool));
+                thread_pools.push((
+                    Arc::new(pool),
+                    Arc::new(AtomicBool::new(true)),
+                    Arc::new(AtomicBool::new(false)),
+                ));
             }
             info!(
                 "Created {} prover thread pools with {} threads each",
@@ -81,20 +86,22 @@ impl Prover {
                     .num_threads(2)
                     .thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
                     .build()?;
-                thread_pools.push(Arc::new(pool));
+                thread_pools.push((
+                    Arc::new(pool),
+                    Arc::new(AtomicBool::new(true)),
+                    Arc::new(AtomicBool::new(false)),
+                ));
             }
             info!("Created {} prover thread pools with 2 threads each", thread_pools.len(),);
         }
 
         let (sender, mut receiver) = mpsc::channel(1024);
-        let terminator = Arc::new(AtomicBool::new(false));
         let prover = Arc::new(Self {
             thread_pools: Arc::new(thread_pools),
             cuda,
             cuda_jobs,
             sender: Arc::new(sender),
             client,
-            terminator,
             current_block: Default::default(),
             total_proofs: Default::default(),
             valid_shares: Default::default(),
@@ -115,27 +122,6 @@ impl Prover {
             }
         });
         debug!("Created prover message handler");
-
-        let terminator = prover.terminator.clone();
-
-        task::spawn(async move {
-            let mut counter = false;
-            loop {
-                if terminator.load(Ordering::SeqCst) {
-                    if counter {
-                        debug!("Long terminator detected, resetting");
-                        terminator.store(false, Ordering::SeqCst);
-                        counter = false;
-                    } else {
-                        counter = true;
-                    }
-                } else {
-                    counter = false;
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
-        debug!("Created prover terminator guard");
 
         let total_proofs = prover.total_proofs.clone();
         task::spawn(async move {
@@ -248,108 +234,156 @@ impl Prover {
         );
 
         let current_block = self.current_block.clone();
-        let terminator = self.terminator.clone();
         let client = self.client.clone();
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
         let cuda_jobs = self.cuda_jobs;
 
+        let block_template = Arc::new(block_template);
         task::spawn(async move {
-            terminator.store(true, Ordering::SeqCst);
-            while terminator.load(Ordering::SeqCst) {
-                // Wait until the prover terminator is set to false.
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
+            // terminator.store(true, Ordering::SeqCst);
+            // while terminator.load(Ordering::SeqCst) {
+            //     // Wait until the prover terminator is set to false.
+            //     tokio::time::sleep(Duration::from_millis(50)).await;
+            // }
 
             let _ = task::spawn(async move {
-                let mut joins = Vec::new();
                 if let Some(cuda) = cuda {
                     for gpu_index in cuda {
                         for job_index in 0..cuda_jobs.unwrap_or(1) {
                             let tp = thread_pools
                                 .get(gpu_index as usize * cuda_jobs.unwrap_or(1) as usize + job_index as usize)
-                                .unwrap();
+                                .unwrap()
+                                .clone();
                             debug!("Spawning CUDA thread on GPU {} job {}", gpu_index, job_index,);
-                            work_with_gpu(
-                                &current_block,
-                                &terminator,
-                                &client,
-                                &block_template,
-                                &total_proofs,
-                                tp,
-                                &mut joins,
-                                gpu_index,
-                                share_difficulty,
-                            );
+                            let current_block = current_block.clone();
+                            let client = client.clone();
+                            let total_proofs = total_proofs.clone();
+                            let block_template = block_template.clone();
+
+                            task::spawn(async move {
+                                let ready = tp.1.clone();
+                                let terminator = tp.2.clone();
+                                // if the pool is not ready(e.g. there is a old work running),
+                                // set terminator to true to notify the old work to early exit
+                                if !ready.load(Ordering::SeqCst) {
+                                    terminator.store(true, Ordering::SeqCst);
+                                }
+
+                                // waiting until the pool become ready
+                                while !ready.load(Ordering::SeqCst) {
+                                    task::yield_now().await;
+                                }
+                                // the pool is ready to run new work
+                                terminator.store(false, Ordering::SeqCst);
+
+                                work_with_gpu(
+                                    current_block.clone(),
+                                    client.clone(),
+                                    block_template.clone(),
+                                    total_proofs.clone(),
+                                    tp.clone(),
+                                    gpu_index,
+                                    share_difficulty,
+                                );
+                            });
                         }
                     }
                 } else {
-                    for tp in thread_pools.iter() {
-                        work_with_cpu(
-                            &current_block,
-                            &terminator,
-                            &client,
-                            &block_template,
-                            &total_proofs,
-                            tp,
-                            &mut joins,
-                            share_difficulty,
-                        );
+                    for tp in thread_pools.iter().cloned() {
+                        let ready = tp.1.clone();
+                        let terminator = tp.2.clone();
+                        if !ready.load(Ordering::SeqCst) {
+                            terminator.store(true, Ordering::SeqCst);
+                        }
+                        let current_block = current_block.clone();
+                        let client = client.clone();
+                        let total_proofs = total_proofs.clone();
+                        let block_template = block_template.clone();
+                        task::spawn(async move {
+                            let ready = tp.1.clone();
+                            let terminator = tp.2.clone();
+                            // if the pool is not ready(e.g. there is a old work running),
+                            // set terminator to true to notify the old work to early exit
+                            if !ready.load(Ordering::SeqCst) {
+                                terminator.store(true, Ordering::SeqCst);
+                            }
+
+                            // waiting until the pool become ready
+                            while !ready.load(Ordering::SeqCst) {
+                                task::yield_now().await;
+                            }
+                            // the pool is ready to run new work
+                            terminator.store(false, Ordering::SeqCst);
+                            work_with_cpu(
+                                current_block.clone(),
+                                client.clone(),
+                                block_template.clone(),
+                                total_proofs.clone(),
+                                tp.clone(),
+                                share_difficulty,
+                            );
+                        });
                     }
                 }
-                futures::future::join_all(joins).await;
-                terminator.store(false, Ordering::SeqCst);
             });
         });
     }
 }
 
 fn work_with_cpu(
-    current_block: &Arc<AtomicU32>,
-    terminator: &Arc<AtomicBool>,
-    client: &Arc<Client>,
-    block_template: &BlockTemplate<Testnet2>,
-    total_proofs: &Arc<AtomicU32>,
-    tp: &Arc<ThreadPool>,
-    joins: &mut Vec<task::JoinHandle<()>>,
+    current_block: Arc<AtomicU32>,
+    client: Arc<Client>,
+    block_template: Arc<BlockTemplate<Testnet2>>,
+    total_proofs: Arc<AtomicU32>,
+    tp: (Arc<ThreadPool>, Arc<AtomicBool>, Arc<AtomicBool>),
     share_difficulty: u64,
 ) {
     work_with_gpu(
         current_block,
-        terminator,
         client,
         block_template,
         total_proofs,
         tp,
-        joins,
         -1,
         share_difficulty,
     )
 }
 
 fn work_with_gpu(
-    current_block: &Arc<AtomicU32>,
-    terminator: &Arc<AtomicBool>,
-    client: &Arc<Client>,
-    block_template: &BlockTemplate<Testnet2>,
-    total_proofs: &Arc<AtomicU32>,
-    tp: &Arc<ThreadPool>,
-    joins: &mut Vec<task::JoinHandle<()>>,
+    current_block: Arc<AtomicU32>,
+    client: Arc<Client>,
+    block_template: Arc<BlockTemplate<Testnet2>>,
+    total_proofs: Arc<AtomicU32>,
+    tp: (Arc<ThreadPool>, Arc<AtomicBool>, Arc<AtomicBool>),
     gpu_index: i16,
     share_difficulty: u64,
 ) {
     let current_block = current_block.clone();
-    let terminator = terminator.clone();
+    let ready = tp.1.clone();
+    let terminator = tp.2.clone();
     let client = client.clone();
     let block_template = block_template.clone();
     let total_proofs = total_proofs.clone();
-    let tp = tp.clone();
-    joins.push(task::spawn(async move {
+    let tp = tp.0.clone();
+    task::spawn(async move {
+        let block_height = block_template.block_height();
+        // final check before setting the pool to running state
+        if block_height != current_block.load(Ordering::SeqCst) {
+            debug!(
+                "Terminating stale work: current {} latest {}",
+                block_height,
+                current_block.load(Ordering::SeqCst)
+            );
+            ready.store(true, Ordering::SeqCst);
+            return;
+        }
         while !terminator.load(Ordering::SeqCst) {
+            // set the pool to running state
+            ready.store(false, Ordering::SeqCst);
             let terminator = terminator.clone();
             let block_template = block_template.clone();
-            let block_height = block_template.block_height();
             let tp = tp.clone();
             if block_height != current_block.load(Ordering::SeqCst) {
                 debug!(
@@ -357,6 +391,7 @@ fn work_with_gpu(
                     block_height,
                     current_block.load(Ordering::SeqCst)
                 );
+                ready.store(true, Ordering::SeqCst);
                 break;
             }
             if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
@@ -372,6 +407,7 @@ fn work_with_gpu(
                         block_height,
                         current_block.load(Ordering::SeqCst)
                     );
+                    ready.store(true, Ordering::SeqCst);
                     break;
                 }
                 // Ensure the share difficulty target is met.
@@ -399,7 +435,10 @@ fn work_with_gpu(
                     error!("Failed to send PoolResponse: {}", error);
                 }
                 total_proofs.fetch_add(1, Ordering::SeqCst);
+            } else {
+                ready.store(true, Ordering::SeqCst);
+                break;
             }
         }
-    }));
+    });
 }
