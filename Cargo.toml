@@ -8,11 +8,7 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
-snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "cfb283e3" }
-#snarkos = { path = "../../src/snarkOS" }
-#snarkos-storage = { path = "../../src/snarkOS/storage" }
-snarkos = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "8ca00e64" }
-snarkos-storage = { git = "https://github.com/HarukaMa/snarkOS.git", rev = "8ca00e64" }
+snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", branch = "gpu-index" }
 rand = "0.8.5"
 num_cpus = "1.13.1"
 structopt = "0.3.26"
@@ -35,6 +31,7 @@ features = [
     "rt-multi-thread",
     "macros",
     "sync",
+    "net"
 ]
 
 [dependencies.tokio-util]
