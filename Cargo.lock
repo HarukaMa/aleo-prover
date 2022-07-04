@@ -29,6 +29,7 @@ dependencies = [
  "rand",
  "rayon",
  "snarkvm",
+ "snarkvm-algorithms",
  "structopt",
  "tokio",
  "tokio-stream",
@@ -1207,7 +1208,7 @@ checksum = "f2dd574626839106c320a323308629dcb1acfc96e32a8cba364ddc61ac23ee83"
 [[package]]
 name = "snarkvm"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "snarkvm-algorithms",
  "snarkvm-dpc",
@@ -1217,7 +1218,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-algorithms"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -1249,7 +1250,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-curves"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "derivative",
  "rand",
@@ -1263,7 +1264,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-derives"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "proc-macro-crate",
  "proc-macro-error",
@@ -1275,7 +1276,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-dpc"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "anyhow",
  "base58",
@@ -1307,7 +1308,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-fields"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "anyhow",
  "derivative",
@@ -1321,7 +1322,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-gadgets"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "anyhow",
  "derivative",
@@ -1341,7 +1342,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-marlin"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "bincode",
  "blake2",
@@ -1367,7 +1368,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-parameters"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "aleo-std",
  "anyhow",
@@ -1384,7 +1385,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-polycommit"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "derivative",
  "digest 0.9.0",
@@ -1405,12 +1406,12 @@ dependencies = [
 [[package]]
 name = "snarkvm-profiler"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 
 [[package]]
 name = "snarkvm-r1cs"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "anyhow",
  "cfg-if 1.0.0",
@@ -1426,7 +1427,7 @@ dependencies = [
 [[package]]
 name = "snarkvm-utilities"
 version = "0.8.0"
-source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#cfb283e30a5986662bb7a7e8077377e58a6cc422"
+source = "git+https://github.com/HarukaMa/snarkVM.git?branch=gpu-index#aa1825de6eed1eb49740794dcd94f3a46f3111a8"
 dependencies = [
  "aleo-std",
  "anyhow",

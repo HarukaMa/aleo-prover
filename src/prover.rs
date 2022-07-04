@@ -11,7 +11,11 @@ use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use snarkvm::dpc::{testnet2::Testnet2, BlockHeader, BlockTemplate};
+use snarkvm::{
+    dpc::{testnet2::Testnet2, BlockTemplate, Network, PoSWCircuit, PoSWError, PoSWProof},
+    utilities::UniformRand,
+};
+use snarkvm_algorithms::{MerkleParameters, CRH, SNARK};
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info};
 
@@ -106,7 +110,13 @@ impl Prover {
             while let Some(msg) = receiver.recv().await {
                 match msg {
                     ProverEvent::NewWork(difficulty, block_template) => {
-                        p.new_work(difficulty, block_template).await;
+                        p.new_work(
+                            difficulty,
+                            block_template.block_height(),
+                            (*block_template.to_header_tree().unwrap().root()).into(),
+                            block_template.to_header_tree().unwrap().hashed_leaves().to_vec(),
+                        )
+                        .await;
                     }
                     ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
@@ -238,12 +248,17 @@ impl Prover {
         }
     }
 
-    async fn new_work(&self, share_difficulty: u64, block_template: BlockTemplate<Testnet2>) {
-        let block_height = block_template.block_height();
-        self.current_block.store(block_height, Ordering::SeqCst);
+    async fn new_work(
+        &self,
+        share_difficulty: u64,
+        height: u32,
+        block_header_root: <Testnet2 as Network>::BlockHeaderRoot,
+        hashed_leaves: Vec<<<<Testnet2 as Network>::BlockHeaderRootParameters as MerkleParameters>::H as CRH>::Output>,
+    ) {
+        self.current_block.store(height, Ordering::SeqCst);
         info!(
             "Received new work: block {}, share target {}",
-            block_template.block_height(),
+            height,
             u64::MAX / share_difficulty
         );
 
@@ -275,14 +290,16 @@ impl Prover {
                             let current_block = current_block.clone();
                             let terminator = terminator.clone();
                             let client = client.clone();
-                            let block_template = block_template.clone();
+                            let block_header_root = block_header_root;
+                            let hashed_leaves = hashed_leaves.clone();
                             let total_proofs = total_proofs.clone();
                             let tp = tp.clone();
                             joins.push(task::spawn(async move {
                                 while !terminator.load(Ordering::SeqCst) {
                                     let terminator = terminator.clone();
-                                    let block_template = block_template.clone();
-                                    let block_height = block_template.block_height();
+                                    let block_header_root = block_header_root;
+                                    let hashed_leaves = hashed_leaves.clone();
+                                    let block_height = height;
                                     let tp = tp.clone();
                                     if block_height != current_block.load(Ordering::SeqCst) {
                                         debug!(
@@ -292,14 +309,21 @@ impl Prover {
                                         );
                                         break;
                                     }
-                                    if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
-                                        tp.install(|| {
-                                            BlockHeader::mine_once_unchecked(
-                                                &block_template,
-                                                &terminator,
-                                                &mut thread_rng(),
-                                                gpu_index,
-                                            )
+                                    let nonce = UniformRand::rand(&mut thread_rng());
+                                    if let Ok(Ok(proof)) = task::spawn_blocking(move || {
+                                        let circuit: PoSWCircuit<Testnet2> =
+                                            PoSWCircuit::from_raw(block_header_root, nonce, hashed_leaves.clone());
+                                        tp.install(|| -> Result<PoSWProof<Testnet2>, PoSWError> {
+                                            Ok(PoSWProof::<Testnet2>::new(
+                                                <<Testnet2 as Network>::PoSWSNARK as SNARK>::prove_with_terminator(
+                                                    <Testnet2 as Network>::posw_proving_key(),
+                                                    &circuit,
+                                                    &*terminator,
+                                                    &mut thread_rng(),
+                                                    gpu_index,
+                                                )?
+                                                .into(),
+                                            ))
                                         })
                                     })
                                     .await
@@ -313,8 +337,6 @@ impl Prover {
                                             break;
                                         }
                                         // Ensure the share difficulty target is met.
-                                        let nonce = block_header.nonce();
-                                        let proof = block_header.proof().clone();
                                         let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
                                         if proof_difficulty > share_difficulty {
                                             debug!(
@@ -347,15 +369,17 @@ impl Prover {
                         let current_block = current_block.clone();
                         let terminator = terminator.clone();
                         let client = client.clone();
-                        let block_template = block_template.clone();
+                        let block_header_root = block_header_root;
+                        let hashed_leaves = hashed_leaves.clone();
                         let total_proofs = total_proofs.clone();
                         let tp = tp.clone();
                         joins.push(task::spawn(async move {
                             while !terminator.load(Ordering::SeqCst) {
                                 let terminator = terminator.clone();
-                                let block_template = block_template.clone();
+                                let block_header_root = block_header_root;
+                                let hashed_leaves = hashed_leaves.clone();
                                 let tp = tp.clone();
-                                let block_height = block_template.block_height();
+                                let block_height = height;
                                 if block_height != current_block.load(Ordering::SeqCst) {
                                     debug!(
                                         "Terminating stale work: current {} latest {}",
@@ -364,14 +388,21 @@ impl Prover {
                                     );
                                     break;
                                 }
-                                if let Ok(Ok(block_header)) = task::spawn_blocking(move || {
-                                    tp.install(|| {
-                                        BlockHeader::mine_once_unchecked(
-                                            &block_template,
-                                            &terminator,
-                                            &mut thread_rng(),
-                                            -1,
-                                        )
+                                let nonce = UniformRand::rand(&mut thread_rng());
+                                if let Ok(Ok(proof)) = task::spawn_blocking(move || {
+                                    let circuit: PoSWCircuit<Testnet2> =
+                                        PoSWCircuit::from_raw(block_header_root, nonce, hashed_leaves.clone());
+                                    tp.install(|| -> Result<PoSWProof<Testnet2>, PoSWError> {
+                                        Ok(PoSWProof::<Testnet2>::new(
+                                            <<Testnet2 as Network>::PoSWSNARK as SNARK>::prove_with_terminator(
+                                                <Testnet2 as Network>::posw_proving_key(),
+                                                &circuit,
+                                                &*terminator,
+                                                &mut thread_rng(),
+                                                -1,
+                                            )?
+                                            .into(),
+                                        ))
                                     })
                                 })
                                 .await
@@ -385,8 +416,6 @@ impl Prover {
                                         break;
                                     }
                                     // Ensure the share difficulty target is met.
-                                    let nonce = block_header.nonce();
-                                    let proof = block_header.proof().clone();
                                     let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
                                     if proof_difficulty > share_difficulty {
                                         debug!(
