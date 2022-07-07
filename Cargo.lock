@@ -103,7 +103,7 @@ dependencies = [
 [[package]]
 name = "aleo-stratum"
 version = "1.0.0"
-source = "git+https://github.com/HarukaMa/aleo-pool-server#0000046c86d40e9c3b71c0810493d358fd2522b8"
+source = "git+https://github.com/HarukaMa/aleo-pool-server#0000049fef1177fde74c3a83fb71ac8f9b198ad7"
 dependencies = [
  "bytes",
  "erased-serde",
@@ -757,9 +757,9 @@ checksum = "1aab8fc367588b89dcee83ab0fd66b72b50b72fa1904d7095045ace2b0c81c35"
 
 [[package]]
 name = "json-rpc-types"
-version = "1.0.2"
+version = "1.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3890d4363efba3cd8a2fa2871ea3cd975cbaab25fca51344645950f950c4d7b"
+checksum = "543f54304c4e48524e11cfa5134178eccce769ca376eb26aecf49f08202bf77d"
 dependencies = [
  "serde",
  "str-buf",
