@@ -74,7 +74,11 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                             debug!("Sent handshake");
                         }
                         match framed.next().await {
-                            None => continue,
+                            None => {
+                                error!("Unexpected end of stream");
+                                sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
                             Some(Ok(message)) => match message {
                                 StratumMessage::Response(_, _, _) => {
                                     info!("Handshake successful");
@@ -98,7 +102,11 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                             debug!("Sent authorization");
                         }
                         match framed.next().await {
-                            None => continue,
+                            None => {
+                                error!("Unexpected end of stream");
+                                sleep(Duration::from_secs(5)).await;
+                                continue;
+                            }
                             Some(Ok(message)) => match message {
                                 StratumMessage::Response(_, _, _) => {
                                     info!("Authorization successful");
