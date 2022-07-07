@@ -1,25 +1,27 @@
 use std::{
     collections::VecDeque,
     sync::{
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
 };
 
+use aleo_stratum::message::StratumMessage;
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
+use json_rpc_types::Id;
 use rand::thread_rng;
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkvm::{
-    dpc::{testnet2::Testnet2, BlockTemplate, Network, PoSWCircuit, PoSWError, PoSWProof},
-    utilities::UniformRand,
+    dpc::{testnet2::Testnet2, Network, PoSWCircuit, PoSWError, PoSWProof},
+    utilities::{FromBytes, ToBytes, UniformRand},
 };
 use snarkvm_algorithms::{MerkleParameters, CRH, SNARK};
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info};
 
-use crate::{message::ProverMessage, Client};
+use crate::Client;
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
@@ -32,11 +34,13 @@ pub struct Prover {
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
     invalid_shares: Arc<AtomicU32>,
+    current_difficulty_target: Arc<AtomicU64>,
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
-    NewWork(u64, BlockTemplate<Testnet2>),
+    NewTarget(u64),
+    NewWork(u32, String, Vec<String>),
     Result(bool, Option<String>),
 }
 
@@ -103,18 +107,27 @@ impl Prover {
             total_proofs: Default::default(),
             valid_shares: Default::default(),
             invalid_shares: Default::default(),
+            current_difficulty_target: Default::default(),
         });
 
         let p = prover.clone();
         let _ = task::spawn(async move {
             while let Some(msg) = receiver.recv().await {
                 match msg {
-                    ProverEvent::NewWork(difficulty, block_template) => {
+                    ProverEvent::NewTarget(target) => {
+                        p.new_target(target);
+                    }
+                    ProverEvent::NewWork(height, block_header_root, hashed_leaves) => {
                         p.new_work(
-                            difficulty,
-                            block_template.block_height(),
-                            (*block_template.to_header_tree().unwrap().root()).into(),
-                            block_template.to_header_tree().unwrap().hashed_leaves().to_vec(),
+                            height,
+                            <Testnet2 as Network>::BlockHeaderRoot::from_bytes_le(
+                                &hex::decode(block_header_root).unwrap(),
+                            ).unwrap(),
+                            hashed_leaves.iter().map(|h| {
+                                <<<Testnet2 as Network>::BlockHeaderRootParameters as MerkleParameters>::H as CRH>::Output::from_bytes_le(
+                                    &hex::decode(h).unwrap(),
+                                ).unwrap()
+                            }).collect(),
                         )
                         .await;
                     }
@@ -248,19 +261,21 @@ impl Prover {
         }
     }
 
+    fn new_target(&self, difficulty_target: u64) {
+        self.current_difficulty_target
+            .store(difficulty_target, Ordering::SeqCst);
+        info!("New difficulty target: {}", u64::MAX / difficulty_target);
+    }
+
     async fn new_work(
         &self,
-        share_difficulty: u64,
         height: u32,
         block_header_root: <Testnet2 as Network>::BlockHeaderRoot,
         hashed_leaves: Vec<<<<Testnet2 as Network>::BlockHeaderRootParameters as MerkleParameters>::H as CRH>::Output>,
     ) {
         self.current_block.store(height, Ordering::SeqCst);
-        info!(
-            "Received new work: block {}, share target {}",
-            height,
-            u64::MAX / share_difficulty
-        );
+        info!("Received new work: block {}", height,);
+        let share_difficulty = self.current_difficulty_target.load(Ordering::SeqCst);
 
         let current_block = self.current_block.clone();
         let terminator = self.terminator.clone();
@@ -354,7 +369,14 @@ impl Prover {
                                         );
 
                                         // Send a `PoolResponse` to the operator.
-                                        let message = ProverMessage::Submit(block_height, nonce, proof);
+
+                                        let message = StratumMessage::Submit(
+                                            Id::Num(0),
+                                            client.address.to_string(),
+                                            hex::encode(height.to_le_bytes()),
+                                            hex::encode(nonce.to_bytes_le().unwrap()),
+                                            hex::encode(proof.to_bytes_le().unwrap()),
+                                        );
                                         if let Err(error) = client.sender().send(message).await {
                                             error!("Failed to send PoolResponse: {}", error);
                                         }
@@ -433,7 +455,13 @@ impl Prover {
                                     );
 
                                     // Send a `PoolResponse` to the operator.
-                                    let message = ProverMessage::Submit(block_height, nonce, proof);
+                                    let message = StratumMessage::Submit(
+                                        Id::Num(0),
+                                        client.address.to_string(),
+                                        hex::encode(height.to_le_bytes()),
+                                        hex::encode(nonce.to_bytes_le().unwrap()),
+                                        hex::encode(proof.to_bytes_le().unwrap()),
+                                    );
                                     if let Err(error) = client.sender().send(message).await {
                                         error!("Failed to send PoolResponse: {}", error);
                                     }

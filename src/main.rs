@@ -1,6 +1,5 @@
 #[forbid(unsafe_code)]
 mod client;
-mod message;
 mod prover;
 
 use std::{net::ToSocketAddrs, sync::Arc};
