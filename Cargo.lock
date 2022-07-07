@@ -103,7 +103,7 @@ dependencies = [
 [[package]]
 name = "aleo-stratum"
 version = "1.0.0"
-source = "git+https://github.com/HarukaMa/aleo-pool-server#0000049fef1177fde74c3a83fb71ac8f9b198ad7"
+source = "git+https://github.com/HarukaMa/aleo-pool-server#00000513da378cfe05a6c46c0376ddd13ed86731"
 dependencies = [
  "bytes",
  "erased-serde",

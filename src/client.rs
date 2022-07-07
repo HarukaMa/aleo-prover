@@ -65,6 +65,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                             Id::Num(id),
                             format!("HarukaProver/{}", env!("CARGO_PKG_VERSION")),
                             "AleoStratum/1.0.0".to_string(),
+                            None,
                         );
                         id += 1;
                         if let Err(e) = framed.send(handshake).await {
