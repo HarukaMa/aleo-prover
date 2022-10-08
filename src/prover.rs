@@ -61,24 +61,22 @@ impl Prover {
         let pool_count;
         let pool_threads;
         if cuda.is_none() {
-            pool_count = 1;
-            pool_threads = threads;
-            // if threads < 6 {
-            //     pool_count = 1;
-            //     pool_threads = threads;
-            // } else if threads % 12 == 0 {
-            //     pool_count = threads / 12;
-            //     pool_threads = 12;
-            // } else if threads % 10 == 0 {
-            //     pool_count = threads / 10;
-            //     pool_threads = 10;
-            // } else if threads % 8 == 0 {
-            //     pool_count = threads / 8;
-            //     pool_threads = 8;
-            // } else {
-            //     pool_count = threads / 6;
-            //     pool_threads = 6;
-            // }
+            if threads < 12 {
+                pool_count = 1;
+                pool_threads = threads;
+            } else if threads % 12 == 0 {
+                pool_count = threads / 12;
+                pool_threads = 12;
+            } else if threads % 10 == 0 {
+                pool_count = threads / 10;
+                pool_threads = 10;
+            } else if threads % 8 == 0 {
+                pool_count = threads / 8;
+                pool_threads = 8;
+            } else {
+                pool_count = threads / 6;
+                pool_threads = 6;
+            }
         } else {
             pool_threads = 2;
             pool_count = (cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8) as u16;

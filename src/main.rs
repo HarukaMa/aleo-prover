@@ -121,7 +121,7 @@ async fn main() {
         std::process::exit(1);
     }
 
-    let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
+    let threads = opt.threads.unwrap_or(num_cpus::get_physical() as u16);
 
     let cuda: Option<Vec<i16>>;
     let cuda_jobs: Option<u8>;
