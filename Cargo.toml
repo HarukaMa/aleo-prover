@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -9,11 +9,10 @@ license = "GPL-3.0-or-later"
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
-snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", branch = "gpu-index" }
-snarkvm-algorithms = { git = "https://github.com/HarukaMa/snarkVM.git", branch = "gpu-index" }
+snarkvm = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "020daa51f" }
+snarkvm-algorithms = { git = "https://github.com/HarukaMa/snarkVM.git", rev = "020daa51f" }
 rand = "0.8.5"
 num_cpus = "1.13.1"
-structopt = "0.3.26"
 rayon = "1.5.1"
 anyhow = "1.0.53"
 tracing = "0.1.30"
@@ -31,6 +30,12 @@ hex = "0.4.3"
 
 [dependencies.aleo-stratum]
 git = "https://github.com/HarukaMa/aleo-pool-server"
+branch = "testnet3-dummy"
+#path = "../aleo-operator/stratum"
+
+[dependencies.clap]
+version = "4.0.10"
+features = ["derive"]
 
 [dependencies.tokio]
 version = "1.16.1"
@@ -44,6 +49,10 @@ features = [
 [dependencies.tokio-util]
 version = "0.7.0"
 features = ["codec"]
+
+[dependencies.serde_json]
+version = "1.0.82"
+features = ["preserve_order"]
 
 [features]
 cuda = ["snarkvm/cuda"]

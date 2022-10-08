@@ -6,7 +6,7 @@ use aleo_stratum::{
 };
 use futures_util::sink::SinkExt;
 use json_rpc_types::Id;
-use snarkvm::dpc::{testnet2::Testnet2, Address};
+use snarkvm::{console::account::address::Address, prelude::Testnet3};
 use tokio::{
     net::TcpStream,
     sync::{
@@ -24,14 +24,14 @@ use tracing::{debug, error, info, warn};
 use crate::prover::ProverEvent;
 
 pub struct Client {
-    pub address: Address<Testnet2>,
+    pub address: Address<Testnet3>,
     server: String,
     sender: Arc<Sender<StratumMessage>>,
     receiver: Arc<Mutex<Receiver<StratumMessage>>>,
 }
 
 impl Client {
-    pub fn init(address: Address<Testnet2>, server: String) -> Arc<Self> {
+    pub fn init(address: Address<Testnet3>, server: String) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(1024);
         Arc::new(Self {
             address,
@@ -61,10 +61,11 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                     Ok(socket) => {
                         info!("Connected to {}", client.server);
                         let mut framed = Framed::new(socket, StratumCodec::default());
+                        let mut pool_address: Option<String> = None;
                         let handshake = StratumMessage::Subscribe(
                             Id::Num(id),
                             format!("HarukaProver/{}", env!("CARGO_PKG_VERSION")),
-                            "AleoStratum/1.0.0".to_string(),
+                            "AleoStratum/2.0.0".to_string(),
                             None,
                         );
                         id += 1;
@@ -80,7 +81,34 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                 continue;
                             }
                             Some(Ok(message)) => match message {
-                                StratumMessage::Response(_, _, _) => {
+                                StratumMessage::Response(_, params, _) => {
+                                    match params {
+                                        Some(ResponseParams::Array(array)) => {
+                                            if let Some(address) = array.get(2) {
+                                                if let Some(address) = address.downcast_ref::<String>() {
+                                                    pool_address = Some(address.clone());
+                                                } else {
+                                                    error!("Invalid type for address");
+                                                    sleep(Duration::from_secs(5)).await;
+                                                    continue;
+                                                }
+                                            } else {
+                                                error!("Invalid handshake response");
+                                                sleep(Duration::from_secs(5)).await;
+                                                continue;
+                                            }
+                                        }
+                                        None => {
+                                            error!("No handshake response");
+                                            sleep(Duration::from_secs(5)).await;
+                                            continue;
+                                        }
+                                        _ => {
+                                            error!("Invalid handshake response");
+                                            sleep(Duration::from_secs(5)).await;
+                                            continue;
+                                        }
+                                    }
                                     info!("Handshake successful");
                                 }
                                 _ => {
@@ -166,14 +194,14 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                                     }
                                                 }
                                             }
-                                            StratumMessage::Notify(job_id, block_header_root, hashed_leaves_1, hashed_leaves_2, hashed_leaves_3, hashed_leaves_4, _) => {
+                                            StratumMessage::Notify(job_id, epoch_challenge, address, _) => {
                                                 let job_id_bytes = hex::decode(job_id).expect("Failed to decode job_id");
-                                                if job_id_bytes.len() != 4 {
+                                                if job_id_bytes.len() != 8 {
                                                     error!("Unexpected job_id length: {}", job_id_bytes.len());
                                                     continue;
                                                 }
-                                                let height = u32::from_le_bytes(job_id_bytes[0..4].try_into().unwrap());
-                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(height, block_header_root, vec![hashed_leaves_1, hashed_leaves_2, hashed_leaves_3, hashed_leaves_4])).await {
+                                                let epoch = u64::from_le_bytes(job_id_bytes[0..8].try_into().unwrap());
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch, epoch_challenge, address.unwrap_or_else(|| pool_address.clone().expect("No pool address defined")))).await {
                                                     error!("Error sending work to prover: {}", e);
                                                 } else {
                                                     debug!("Sent work to prover");

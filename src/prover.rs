@@ -1,5 +1,6 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
+    str::FromStr,
     sync::{
         atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
         Arc,
@@ -11,14 +12,18 @@ use aleo_stratum::message::StratumMessage;
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use json_rpc_types::Id;
-use rand::thread_rng;
+use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkvm::{
-    dpc::{testnet2::Testnet2, Network, PoSWCircuit, PoSWError, PoSWProof},
-    utilities::{FromBytes, ToBytes, UniformRand},
+    compiler::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
+    console::account::address::Address,
+    prelude::{CoinbasePuzzle, Environment, FromBytes, Testnet3, ToBytes},
 };
-use snarkvm_algorithms::{MerkleParameters, CRH, SNARK};
-use tokio::{sync::mpsc, task};
+use snarkvm_algorithms::{crypto_hash::sha256d_to_u64, polycommit::kzg10::UniversalParams};
+use tokio::{
+    sync::{mpsc, RwLock},
+    task,
+};
 use tracing::{debug, error, info};
 
 use crate::Client;
@@ -30,17 +35,18 @@ pub struct Prover {
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<Client>,
     terminator: Arc<AtomicBool>,
-    current_block: Arc<AtomicU32>,
+    current_epoch: Arc<AtomicU64>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
     invalid_shares: Arc<AtomicU32>,
-    current_difficulty_target: Arc<AtomicU64>,
+    current_proof_target: Arc<AtomicU64>,
+    coinbase_proving_key: CoinbaseProvingKey<Testnet3>,
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
     NewTarget(u64),
-    NewWork(u32, String, Vec<String>),
+    NewWork(u64, String, String),
     Result(bool, Option<String>),
 }
 
@@ -54,48 +60,55 @@ impl Prover {
         let mut thread_pools: Vec<Arc<ThreadPool>> = Vec::new();
         let pool_count;
         let pool_threads;
-        if threads % 12 == 0 {
-            pool_count = threads / 12;
-            pool_threads = 12;
-        } else if threads % 10 == 0 {
-            pool_count = threads / 10;
-            pool_threads = 10;
-        } else if threads % 8 == 0 {
-            pool_count = threads / 8;
-            pool_threads = 8;
-        } else {
-            pool_count = threads / 6;
-            pool_threads = 6;
-        }
         if cuda.is_none() {
-            for index in 0..pool_count {
-                let pool = ThreadPoolBuilder::new()
-                    .stack_size(8 * 1024 * 1024)
-                    .num_threads(pool_threads as usize)
-                    .thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
-                    .build()?;
-                thread_pools.push(Arc::new(pool));
+            if threads % 12 == 0 {
+                pool_count = threads / 12;
+                pool_threads = 12;
+            } else if threads % 10 == 0 {
+                pool_count = threads / 10;
+                pool_threads = 10;
+            } else if threads % 8 == 0 {
+                pool_count = threads / 8;
+                pool_threads = 8;
+            } else {
+                pool_count = threads / 6;
+                pool_threads = 6;
             }
-            info!(
-                "Created {} prover thread pools with {} threads each",
-                thread_pools.len(),
-                pool_threads
-            );
         } else {
-            let total_jobs = cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8;
-            for index in 0..total_jobs {
-                let pool = ThreadPoolBuilder::new()
-                    .stack_size(8 * 1024 * 1024)
-                    .num_threads(2)
-                    .thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
-                    .build()?;
-                thread_pools.push(Arc::new(pool));
-            }
-            info!("Created {} prover thread pools with 2 threads each", thread_pools.len(),);
+            pool_threads = 2;
+            pool_count = (cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8) as u16;
         }
+        for index in 0..pool_count {
+            let builder = ThreadPoolBuilder::new()
+                .stack_size(8 * 1024 * 1024)
+                .num_threads(pool_threads as usize);
+            let pool = if cuda.is_none() {
+                builder.thread_name(move |idx| format!("ap-cpu-{}-{}", index, idx))
+            } else {
+                builder.thread_name(move |idx| format!("ap-cuda-{}-{}", index, idx))
+            }
+            .build()?;
+            thread_pools.push(Arc::new(pool));
+        }
+        info!(
+            "Created {} prover thread pools with {} threads each",
+            thread_pools.len(),
+            pool_threads
+        );
 
         let (sender, mut receiver) = mpsc::channel(1024);
         let terminator = Arc::new(AtomicBool::new(false));
+
+        info!("Initializing universal SRS");
+        let srs = UniversalSRS::<Testnet3>::load().expect("Failed to load SRS");
+        info!("Universal SRS initialized");
+
+        info!("Initializing coinbase proving key");
+        let coinbase_proving_key = CoinbasePuzzle::<Testnet3>::trim(&srs, PuzzleConfig { degree: (1 << 13) - 1 })
+            .expect("Failed to load coinbase proving key")
+            .0;
+        info!("Coinbase proving key initialized");
+
         let prover = Arc::new(Self {
             thread_pools: Arc::new(thread_pools),
             cuda,
@@ -103,11 +116,12 @@ impl Prover {
             sender: Arc::new(sender),
             client,
             terminator,
-            current_block: Default::default(),
+            current_epoch: Default::default(),
             total_proofs: Default::default(),
             valid_shares: Default::default(),
             invalid_shares: Default::default(),
-            current_difficulty_target: Default::default(),
+            current_proof_target: Default::default(),
+            coinbase_proving_key,
         });
 
         let p = prover.clone();
@@ -117,17 +131,14 @@ impl Prover {
                     ProverEvent::NewTarget(target) => {
                         p.new_target(target);
                     }
-                    ProverEvent::NewWork(height, block_header_root, hashed_leaves) => {
+                    ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
                         p.new_work(
-                            height,
-                            <Testnet2 as Network>::BlockHeaderRoot::from_bytes_le(
-                                &hex::decode(block_header_root).unwrap(),
-                            ).unwrap(),
-                            hashed_leaves.iter().map(|h| {
-                                <<<Testnet2 as Network>::BlockHeaderRootParameters as MerkleParameters>::H as CRH>::Output::from_bytes_le(
-                                    &hex::decode(h).unwrap(),
-                                ).unwrap()
-                            }).collect(),
+                            epoch_number,
+                            EpochChallenge::<Testnet3>::from_bytes_le(
+                                &*hex::decode(epoch_challenge.as_bytes()).unwrap(),
+                            )
+                            .unwrap(),
+                            Address::<Testnet3>::from_str(&address).unwrap(),
                         )
                         .await;
                     }
@@ -261,29 +272,24 @@ impl Prover {
         }
     }
 
-    fn new_target(&self, difficulty_target: u64) {
-        self.current_difficulty_target
-            .store(difficulty_target, Ordering::SeqCst);
-        info!("New difficulty target: {}", u64::MAX / difficulty_target);
+    fn new_target(&self, proof_target: u64) {
+        self.current_proof_target.store(proof_target, Ordering::SeqCst);
+        info!("New proof target: {}", proof_target);
     }
 
-    async fn new_work(
-        &self,
-        height: u32,
-        block_header_root: <Testnet2 as Network>::BlockHeaderRoot,
-        hashed_leaves: Vec<<<<Testnet2 as Network>::BlockHeaderRootParameters as MerkleParameters>::H as CRH>::Output>,
-    ) {
-        self.current_block.store(height, Ordering::SeqCst);
-        info!("Received new work: block {}", height,);
-        let share_difficulty = self.current_difficulty_target.load(Ordering::SeqCst);
+    async fn new_work(&self, epoch_number: u64, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
+        self.current_epoch.store(epoch_number, Ordering::SeqCst);
+        info!("Received new work: epoch {}", epoch_number);
+        let proof_target = self.current_proof_target.load(Ordering::SeqCst);
 
-        let current_block = self.current_block.clone();
+        let current_epoch = self.current_epoch.clone();
         let terminator = self.terminator.clone();
         let client = self.client.clone();
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
         let cuda_jobs = self.cuda_jobs;
+        let proving_key = self.coinbase_proving_key.clone();
 
         task::spawn(async move {
             terminator.store(true, Ordering::SeqCst);
@@ -295,172 +301,73 @@ impl Prover {
             let _ = task::spawn(async move {
                 let mut joins = Vec::new();
                 if let Some(cuda) = cuda {
-                    for gpu_index in cuda {
-                        for job_index in 0..cuda_jobs.unwrap_or(1) {
-                            let tp = thread_pools
-                                .get(gpu_index as usize * cuda_jobs.unwrap_or(1) as usize + job_index as usize)
-                                .unwrap();
-                            debug!("Spawning CUDA thread on GPU {} job {}", gpu_index, job_index,);
-
-                            let current_block = current_block.clone();
-                            let terminator = terminator.clone();
-                            let client = client.clone();
-                            let block_header_root = block_header_root;
-                            let hashed_leaves = hashed_leaves.clone();
-                            let total_proofs = total_proofs.clone();
-                            let tp = tp.clone();
-                            joins.push(task::spawn(async move {
-                                while !terminator.load(Ordering::SeqCst) {
-                                    let terminator = terminator.clone();
-                                    let block_header_root = block_header_root;
-                                    let hashed_leaves = hashed_leaves.clone();
-                                    let block_height = height;
-                                    let tp = tp.clone();
-                                    if block_height != current_block.load(Ordering::SeqCst) {
-                                        debug!(
-                                            "Terminating stale work: current {} latest {}",
-                                            block_height,
-                                            current_block.load(Ordering::SeqCst)
-                                        );
-                                        break;
-                                    }
-                                    let nonce = UniformRand::rand(&mut thread_rng());
-                                    if let Ok(Ok(proof)) = task::spawn_blocking(move || {
-                                        let circuit: PoSWCircuit<Testnet2> =
-                                            PoSWCircuit::from_raw(block_header_root, nonce, hashed_leaves.clone());
-                                        tp.install(|| -> Result<PoSWProof<Testnet2>, PoSWError> {
-                                            Ok(PoSWProof::<Testnet2>::new(
-                                                <<Testnet2 as Network>::PoSWSNARK as SNARK>::prove_with_terminator(
-                                                    <Testnet2 as Network>::posw_proving_key(),
-                                                    &circuit,
-                                                    &*terminator,
-                                                    &mut thread_rng(),
-                                                    gpu_index,
-                                                )?
-                                                .into(),
-                                            ))
-                                        })
-                                    })
-                                    .await
-                                    {
-                                        if block_height != current_block.load(Ordering::SeqCst) {
-                                            debug!(
-                                                "Terminating stale work: current {} latest {}",
-                                                block_height,
-                                                current_block.load(Ordering::SeqCst)
-                                            );
-                                            break;
-                                        }
-                                        // Ensure the share difficulty target is met.
-                                        let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
-                                        if proof_difficulty > share_difficulty {
-                                            debug!(
-                                                "Share difficulty target not met: {} > {}",
-                                                proof_difficulty, share_difficulty
-                                            );
-                                            total_proofs.fetch_add(1, Ordering::SeqCst);
-                                            continue;
-                                        }
-
-                                        info!(
-                                            "Share found for block {} with weight {}",
-                                            block_height,
-                                            u64::MAX / proof_difficulty
-                                        );
-
-                                        // Send a `PoolResponse` to the operator.
-
-                                        let message = StratumMessage::Submit(
-                                            Id::Num(0),
-                                            client.address.to_string(),
-                                            hex::encode(height.to_le_bytes()),
-                                            hex::encode(nonce.to_bytes_le().unwrap()),
-                                            hex::encode(proof.to_bytes_le().unwrap()),
-                                        );
-                                        if let Err(error) = client.sender().send(message).await {
-                                            error!("Failed to send PoolResponse: {}", error);
-                                        }
-                                        total_proofs.fetch_add(1, Ordering::SeqCst);
-                                    }
-                                }
-                            }));
-                        }
-                    }
+                    panic!("CUDA not yet supported");
                 } else {
                     for tp in thread_pools.iter() {
-                        let current_block = current_block.clone();
+                        let current_epoch = current_epoch.clone();
                         let terminator = terminator.clone();
                         let client = client.clone();
-                        let block_header_root = block_header_root;
-                        let hashed_leaves = hashed_leaves.clone();
+                        let epoch_challenge = epoch_challenge.clone();
+                        let address = address.clone();
                         let total_proofs = total_proofs.clone();
                         let tp = tp.clone();
+                        let proving_key = proving_key.clone();
                         joins.push(task::spawn(async move {
                             while !terminator.load(Ordering::SeqCst) {
                                 let terminator = terminator.clone();
-                                let block_header_root = block_header_root;
-                                let hashed_leaves = hashed_leaves.clone();
+                                let epoch_challenge = epoch_challenge.clone();
+                                let address = address.clone();
                                 let tp = tp.clone();
-                                let block_height = height;
-                                if block_height != current_block.load(Ordering::SeqCst) {
+                                let proving_key = proving_key.clone();
+                                if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                     debug!(
                                         "Terminating stale work: current {} latest {}",
-                                        block_height,
-                                        current_block.load(Ordering::SeqCst)
+                                        epoch_number,
+                                        current_epoch.load(Ordering::SeqCst)
                                     );
                                     break;
                                 }
-                                let nonce = UniformRand::rand(&mut thread_rng());
-                                if let Ok(Ok(proof)) = task::spawn_blocking(move || {
-                                    let circuit: PoSWCircuit<Testnet2> =
-                                        PoSWCircuit::from_raw(block_header_root, nonce, hashed_leaves.clone());
-                                    tp.install(|| -> Result<PoSWProof<Testnet2>, PoSWError> {
-                                        Ok(PoSWProof::<Testnet2>::new(
-                                            <<Testnet2 as Network>::PoSWSNARK as SNARK>::prove_with_terminator(
-                                                <Testnet2 as Network>::posw_proving_key(),
-                                                &circuit,
-                                                &*terminator,
-                                                &mut thread_rng(),
-                                                -1,
-                                            )?
-                                            .into(),
-                                        ))
+                                let nonce = thread_rng().next_u64();
+                                if let Ok(Ok(solution)) = task::spawn_blocking(move || {
+                                    tp.install(|| {
+                                        CoinbasePuzzle::prove(&proving_key.clone(), &epoch_challenge, &address, nonce)
                                     })
                                 })
                                 .await
                                 {
-                                    if block_height != current_block.load(Ordering::SeqCst) {
+                                    if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                         debug!(
                                             "Terminating stale work: current {} latest {}",
-                                            block_height,
-                                            current_block.load(Ordering::SeqCst)
+                                            epoch_number,
+                                            current_epoch.load(Ordering::SeqCst)
                                         );
                                         break;
                                     }
                                     // Ensure the share difficulty target is met.
-                                    let proof_difficulty = proof.to_proof_difficulty().unwrap_or(u64::MAX);
-                                    if proof_difficulty > share_difficulty {
+                                    let proof_difficulty =
+                                        u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
+                                    if proof_difficulty < proof_target {
                                         debug!(
                                             "Share difficulty target not met: {} > {}",
-                                            proof_difficulty, share_difficulty
+                                            proof_difficulty, proof_target
                                         );
                                         total_proofs.fetch_add(1, Ordering::SeqCst);
                                         continue;
                                     }
 
                                     info!(
-                                        "Share found for block {} with weight {}",
-                                        block_height,
-                                        u64::MAX / proof_difficulty
+                                        "Share found for epoch {} with difficulty {}",
+                                        epoch_number, proof_difficulty
                                     );
 
                                     // Send a `PoolResponse` to the operator.
                                     let message = StratumMessage::Submit(
                                         Id::Num(0),
                                         client.address.to_string(),
-                                        hex::encode(height.to_le_bytes()),
+                                        hex::encode(epoch_number.to_le_bytes()),
                                         hex::encode(nonce.to_bytes_le().unwrap()),
-                                        hex::encode(proof.to_bytes_le().unwrap()),
+                                        hex::encode(solution.commitment().to_bytes_le().unwrap()),
+                                        hex::encode(solution.proof().to_bytes_le().unwrap()),
                                     );
                                     if let Err(error) = client.sender().send(message).await {
                                         error!("Failed to send PoolResponse: {}", error);

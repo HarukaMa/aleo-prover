@@ -1,11 +1,16 @@
+extern crate core;
+
 #[forbid(unsafe_code)]
 mod client;
 mod prover;
 
 use std::{net::ToSocketAddrs, sync::Arc};
 
-use snarkvm::dpc::{testnet2::Testnet2, Account, Address};
-use structopt::StructOpt;
+use clap::Parser;
+use snarkvm::{
+    console::account::address::Address,
+    prelude::{PrivateKey, Testnet3, ViewKey},
+};
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -14,48 +19,48 @@ use crate::{
     prover::Prover,
 };
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "prover", about = "Standalone prover.", setting = structopt::clap::AppSettings::ColoredHelp)]
+#[derive(Debug, Parser)]
+#[clap(name = "prover", about = "Standalone prover.")]
 struct Opt {
     /// Enable debug logging
-    #[structopt(short = "d", long = "debug")]
+    #[clap(short = 'd', long = "debug")]
     debug: bool,
 
     /// Prover address (aleo1...)
-    #[structopt(short = "a", long = "address", required_if("new_address", "false"))]
-    address: Option<Address<Testnet2>>,
+    #[clap(short = 'a', long = "address")]
+    address: Option<Address<Testnet3>>,
 
     /// Pool server address
-    #[structopt(short = "p", long = "pool", required_if("new_address", "false"))]
+    #[clap(short = 'p', long = "pool")]
     pool: Option<String>,
 
     /// Number of threads
-    #[structopt(short = "t", long = "threads")]
+    #[clap(short = 't', long = "threads")]
     threads: Option<u16>,
 
     /// Output log to file
-    #[structopt(short = "o", long = "log")]
+    #[clap(short = 'o', long = "log")]
     log: Option<String>,
 
     /// Generate a new address
-    #[structopt(long = "new-address")]
+    #[clap(long = "new-address")]
     new_address: bool,
 
     #[cfg(feature = "cuda")]
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     /// Indexes of GPUs to use (starts from 0)
     /// Specify multiple times to use multiple GPUs
     /// Example: -g 0 -g 1 -g 2
     /// Note: Pure CPU proving will be disabled as each GPU job requires one CPU thread as well
-    #[structopt(short = "g", long = "cuda")]
+    #[clap(short = 'g', long = "cuda")]
     cuda: Option<Vec<i16>>,
 
     #[cfg(feature = "cuda")]
-    #[structopt(verbatim_doc_comment)]
+    #[clap(verbatim_doc_comment)]
     /// Parallel jobs per GPU, defaults to 1
     /// Example: -g 0 -g 1 -j 4
     /// The above example will result in 8 jobs in total
-    #[structopt(short = "j", long = "cuda-jobs")]
+    #[clap(short = 'j', long = "cuda-jobs")]
     jobs: Option<u8>,
 }
 
@@ -64,13 +69,15 @@ async fn main() {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
 
-    let opt = Opt::from_args();
+    let opt = Opt::parse();
     if opt.new_address {
-        let account = Account::<Testnet2>::new(&mut rand::thread_rng());
+        let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
+        let view_key = ViewKey::try_from(&private_key).unwrap();
+        let address = Address::try_from(&view_key).unwrap();
         println!();
-        println!("Private key: {}", account.private_key());
-        println!("   View key: {}", account.view_key());
-        println!("    Address: {}", account.address());
+        println!("Private key: {}", private_key);
+        println!("   View key: {}", view_key);
+        println!("    Address: {}", address);
         println!();
         println!("WARNING: Make sure you have a backup of both private key and view key!");
         println!("         Nobody can help you recover those keys if you lose them!");
