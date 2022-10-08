@@ -30,7 +30,7 @@ dependencies = [
 
 [[package]]
 name = "aleo-prover"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "aleo-stratum",
  "ansi_term",
@@ -123,7 +123,7 @@ checksum = "7e4f181fc1a372e8ceff89612e5c9b13f72bff5b066da9f8d6827ae65af492c4"
 [[package]]
 name = "aleo-stratum"
 version = "1.0.0"
-source = "git+https://github.com/HarukaMa/aleo-pool-server?rev=76e25ae#76e25ae77408959d68064fa7dd553e01e54913b9"
+source = "git+https://github.com/HarukaMa/aleo-pool-server?branch=testnet3-dummy#f5240a1684133ece934dfff4dfb18c187f8939ce"
 dependencies = [
  "bytes",
  "downcast-rs",
