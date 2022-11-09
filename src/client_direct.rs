@@ -81,7 +81,9 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
             loop {
                 sleep(Duration::from_secs(10)).await;
                 if connected.load(Ordering::SeqCst) {
-                    client_sender.send(Message::PuzzleRequest(PuzzleRequest {}));
+                    if let Err(e) = client_sender.send(Message::PuzzleRequest(PuzzleRequest {})).await {
+                        error!("Failed to send puzzle request: {}", e);
+                    }
                 }
             }
         });
@@ -93,7 +95,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                     Ok(socket) => {
                         info!("Connected to {}", client.server);
                         let mut framed = Framed::new(socket, MessageCodec::default());
-                        let mut pool_address: Option<String> = None;
+                        let pool_address: Option<String> = None;
                         let challenge_request = Message::ChallengeRequest(ChallengeRequest {
                             version: Message::VERSION,
                             fork_depth: 4096,
@@ -192,8 +194,16 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 epoch_challenge, block
                                             }) => {
                                                 let block = block.deserialize().await.unwrap();
-                                                prover_sender.send(ProverEvent::NewTarget(block.proof_target()));
-                                                prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.address));
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewTarget(block.proof_target())).await {
+                                                    error!("Error sending new target to prover: {}", e);
+                                                } else {
+                                                    debug!("Sent new target to prover");
+                                                }
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.address)).await {
+                                                    error!("Error sending new work to prover: {}", e);
+                                                } else {
+                                                    debug!("Sent new work to prover");
+                                                }
                                             }
                                             _ => {
                                                 debug!("Unhandled message: {}", message.name());
