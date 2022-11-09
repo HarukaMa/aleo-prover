@@ -1,7 +1,7 @@
 extern crate core;
 
 #[forbid(unsafe_code)]
-mod client;
+mod client_direct;
 mod prover;
 
 use std::{net::ToSocketAddrs, sync::Arc};
@@ -15,7 +15,7 @@ use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
 use crate::{
-    client::{start, Client},
+    client_direct::{start, DirectClient},
     prover::Prover,
 };
 
@@ -30,9 +30,9 @@ struct Opt {
     #[clap(short = 'a', long = "address")]
     address: Option<Address<Testnet3>>,
 
-    /// Pool server address
-    #[clap(short = 'p', long = "pool")]
-    pool: Option<String>,
+    /// Beacon node address
+    #[clap(short = 'b', long = "beacon")]
+    beacon: Option<String>,
 
     /// Number of threads
     #[clap(short = 't', long = "threads")]
@@ -106,7 +106,7 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
-    if opt.pool.is_none() {
+    if opt.beacon.is_none() {
         error!("Pool address is required!");
         std::process::exit(1);
     }
@@ -115,9 +115,9 @@ async fn main() {
         std::process::exit(1);
     }
     let address = opt.address.unwrap();
-    let pool = opt.pool.unwrap();
-    if let Err(e) = pool.to_socket_addrs() {
-        error!("Invalid pool address {}: {}", pool, e);
+    let beacon = opt.beacon.unwrap();
+    if let Err(e) = beacon.to_socket_addrs() {
+        error!("Invalid pool address {}: {}", beacon, e);
         std::process::exit(1);
     }
 
@@ -149,7 +149,7 @@ async fn main() {
     //     debug!("Node initialized");
     // }
 
-    let client = Client::init(address, pool);
+    let client = DirectClient::init(address, beacon);
 
     let prover: Arc<Prover> = match Prover::init(threads, client.clone(), cuda, cuda_jobs).await {
         Ok(prover) => prover,

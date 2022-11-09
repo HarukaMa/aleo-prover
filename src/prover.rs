@@ -8,16 +8,16 @@ use std::{
     time::Duration,
 };
 
-use aleo_stratum::message::StratumMessage;
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use json_rpc_types::Id;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
+use snarkos_node_messages::{Data, UnconfirmedSolution};
 use snarkvm::{
-    compiler::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
     console::account::address::Address,
     prelude::{CoinbasePuzzle, Environment, FromBytes, Testnet3, ToBytes},
+    synthesizer::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
 };
 use snarkvm_algorithms::{crypto_hash::sha256d_to_u64, polycommit::kzg10::UniversalParams};
 use tokio::{
@@ -26,21 +26,23 @@ use tokio::{
 };
 use tracing::{debug, error, info};
 
-use crate::Client;
+use crate::client_direct::DirectClient;
+
+type Message = snarkos_node_messages::Message<Testnet3>;
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
     cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
-    client: Arc<Client>,
+    client: Arc<DirectClient>,
     terminator: Arc<AtomicBool>,
     current_epoch: Arc<AtomicU64>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
     invalid_shares: Arc<AtomicU32>,
     current_proof_target: Arc<AtomicU64>,
-    coinbase_proving_key: CoinbaseProvingKey<Testnet3>,
+    coinbase_puzzle: CoinbasePuzzle<Testnet3>,
 }
 
 #[allow(clippy::large_enum_variant)]
@@ -53,7 +55,7 @@ pub enum ProverEvent {
 impl Prover {
     pub async fn init(
         threads: u16,
-        client: Arc<Client>,
+        client: Arc<DirectClient>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
@@ -107,9 +109,8 @@ impl Prover {
         info!("Universal SRS initialized");
 
         info!("Initializing coinbase proving key");
-        let coinbase_proving_key = CoinbasePuzzle::<Testnet3>::trim(&srs, PuzzleConfig { degree: (1 << 13) - 1 })
-            .expect("Failed to load coinbase proving key")
-            .0;
+        let coinbase_puzzle = CoinbasePuzzle::<Testnet3>::trim(&srs, PuzzleConfig { degree: (1 << 13) - 1 })
+            .expect("Failed to load coinbase proving key");
         info!("Coinbase proving key initialized");
 
         let prover = Arc::new(Self {
@@ -124,7 +125,7 @@ impl Prover {
             valid_shares: Default::default(),
             invalid_shares: Default::default(),
             current_proof_target: Default::default(),
-            coinbase_proving_key,
+            coinbase_puzzle,
         });
 
         let p = prover.clone();
@@ -199,7 +200,7 @@ impl Prover {
                 info!(
                     "{}",
                     Cyan.normal().paint(format!(
-                        "Total proofs: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
+                        "Total solutions: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
                         proofs,
                         calculate_proof_rate(proofs, m1, 1),
                         calculate_proof_rate(proofs, m5, 5),
@@ -292,7 +293,7 @@ impl Prover {
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
         let cuda_jobs = self.cuda_jobs;
-        let proving_key = self.coinbase_proving_key.clone();
+        let coinbase_puzzle = self.coinbase_puzzle.clone();
 
         task::spawn(async move {
             terminator.store(true, Ordering::SeqCst);
@@ -314,14 +315,14 @@ impl Prover {
                         let address = address.clone();
                         let total_proofs = total_proofs.clone();
                         let tp = tp.clone();
-                        let proving_key = proving_key.clone();
+                        let coinbase_puzzle = coinbase_puzzle.clone();
                         joins.push(task::spawn(async move {
                             while !terminator.load(Ordering::SeqCst) {
                                 let terminator = terminator.clone();
                                 let epoch_challenge = epoch_challenge.clone();
                                 let address = address.clone();
                                 let tp = tp.clone();
-                                let proving_key = proving_key.clone();
+                                let coinbase_puzzle = coinbase_puzzle.clone();
                                 if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                     debug!(
                                         "Terminating stale work: current {} latest {}",
@@ -332,9 +333,7 @@ impl Prover {
                                 }
                                 let nonce = thread_rng().next_u64();
                                 if let Ok(Ok(solution)) = task::spawn_blocking(move || {
-                                    tp.install(|| {
-                                        CoinbasePuzzle::prove(&proving_key.clone(), &epoch_challenge, &address, nonce)
-                                    })
+                                    tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
                                 })
                                 .await
                                 {
@@ -351,7 +350,7 @@ impl Prover {
                                         u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
                                     if proof_difficulty < proof_target {
                                         debug!(
-                                            "Share difficulty target not met: {} > {}",
+                                            "Solution difficulty target not met: {} > {}",
                                             proof_difficulty, proof_target
                                         );
                                         total_proofs.fetch_add(1, Ordering::SeqCst);
@@ -359,19 +358,15 @@ impl Prover {
                                     }
 
                                     info!(
-                                        "Share found for epoch {} with difficulty {}",
+                                        "Solution found for epoch {} with difficulty {}",
                                         epoch_number, proof_difficulty
                                     );
 
                                     // Send a `PoolResponse` to the operator.
-                                    let message = StratumMessage::Submit(
-                                        Id::Num(0),
-                                        client.address.to_string(),
-                                        hex::encode(epoch_number.to_le_bytes()),
-                                        hex::encode(nonce.to_bytes_le().unwrap()),
-                                        hex::encode(solution.commitment().to_bytes_le().unwrap()),
-                                        hex::encode(solution.proof().to_bytes_le().unwrap()),
-                                    );
+                                    let message = Message::UnconfirmedSolution(UnconfirmedSolution {
+                                        puzzle_commitment: solution.commitment(),
+                                        solution: Data::Object(solution),
+                                    });
                                     if let Err(error) = client.sender().send(message).await {
                                         error!("Failed to send PoolResponse: {}", error);
                                     }
