@@ -1,5 +1,11 @@
 # Aleo Light Prover
 
+# "Testnet 3 direct" branch
+
+The prover can directly connect to the beacon node and solve coinbase puzzles using the old thread pool config.
+
+The document below is outdated and might not apply to this branch. Use `--help` to see how to run the prover.
+
 ## Introduction
 
 A standalone Aleo prover build upon snarkOS and snarkVM, with multi-threading optimization.
