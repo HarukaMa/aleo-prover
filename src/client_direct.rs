@@ -75,12 +75,14 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
             .unwrap()
             .header();
         let mut id = 1;
-        let connected = AtomicBool::new(false);
+        let connected = Arc::new(AtomicBool::new(false));
         let client_sender = client.sender();
+
+        let connected_req = connected.clone();
         task::spawn(async move {
             loop {
                 sleep(Duration::from_secs(10)).await;
-                if connected.load(Ordering::SeqCst) {
+                if connected_req.load(Ordering::SeqCst) {
                     if let Err(e) = client_sender.send(Message::PuzzleRequest(PuzzleRequest {})).await {
                         error!("Failed to send puzzle request: {}", e);
                     }
@@ -190,6 +192,9 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     debug!("Sent pong");
                                                 }
                                             }
+                                            Message::Pong(message) => {
+                                                connected.store(true, Ordering::SeqCst);
+                                            }
                                             Message::PuzzleResponse(PuzzleResponse {
                                                 epoch_challenge, block
                                             }) => {
@@ -215,6 +220,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                     }
                                     None => {
                                         error!("Disconnected from beacon");
+                                        connected.store(false, Ordering::SeqCst);
                                         sleep(Duration::from_secs(5)).await;
                                         break;
                                     }
