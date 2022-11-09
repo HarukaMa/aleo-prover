@@ -37,7 +37,7 @@ pub struct Prover {
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<DirectClient>,
     terminator: Arc<AtomicBool>,
-    current_epoch: Arc<AtomicU64>,
+    current_epoch: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
     invalid_shares: Arc<AtomicU32>,
@@ -48,7 +48,7 @@ pub struct Prover {
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
     NewTarget(u64),
-    NewWork(u64, String, String),
+    NewWork(u32, EpochChallenge<Testnet3>, Address<Testnet3>),
     Result(bool, Option<String>),
 }
 
@@ -136,15 +136,7 @@ impl Prover {
                         p.new_target(target);
                     }
                     ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
-                        p.new_work(
-                            epoch_number,
-                            EpochChallenge::<Testnet3>::from_bytes_le(
-                                &*hex::decode(epoch_challenge.as_bytes()).unwrap(),
-                            )
-                            .unwrap(),
-                            Address::<Testnet3>::from_str(&address).unwrap(),
-                        )
-                        .await;
+                        p.new_work(epoch_number, epoch_challenge, address).await;
                     }
                     ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
@@ -281,7 +273,11 @@ impl Prover {
         info!("New proof target: {}", proof_target);
     }
 
-    async fn new_work(&self, epoch_number: u64, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
+    async fn new_work(&self, epoch_number: u32, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
+        let last_epoch_number = self.current_epoch.load(Ordering::SeqCst);
+        if epoch_number <= last_epoch_number {
+            return;
+        }
         self.current_epoch.store(epoch_number, Ordering::SeqCst);
         info!("Received new work: epoch {}", epoch_number);
         let proof_target = self.current_proof_target.load(Ordering::SeqCst);

@@ -1,9 +1,24 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 
 use futures_util::sink::SinkExt;
 use json_rpc_types::Id;
 use snarkos_node_executor::{NodeType, Status};
-use snarkos_node_messages::{ChallengeRequest, ChallengeResponse, Data, MessageCodec, Ping, Pong};
+use snarkos_node_messages::{
+    ChallengeRequest,
+    ChallengeResponse,
+    Data,
+    MessageCodec,
+    Ping,
+    Pong,
+    PuzzleRequest,
+    PuzzleResponse,
+};
 use snarkvm::{
     console::account::address::Address,
     prelude::{Block, FromBytes, Network, Testnet3},
@@ -60,6 +75,17 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
             .unwrap()
             .header();
         let mut id = 1;
+        let connected = AtomicBool::new(false);
+        let client_sender = client.sender();
+        task::spawn(async move {
+            loop {
+                sleep(Duration::from_secs(10)).await;
+                if connected.load(Ordering::SeqCst) {
+                    client_sender.send(Message::PuzzleRequest(PuzzleRequest {}));
+                }
+            }
+        });
+        debug!("Created coinbase puzzle request task");
         loop {
             info!("Connecting to server...");
             match timeout(Duration::from_secs(5), TcpStream::connect(&client.server)).await {
@@ -162,8 +188,12 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     debug!("Sent pong");
                                                 }
                                             }
-                                            Message::Pong(message) => {
-
+                                            Message::PuzzleResponse(PuzzleResponse {
+                                                epoch_challenge, block
+                                            }) => {
+                                                let block = block.deserialize().await.unwrap();
+                                                prover_sender.send(ProverEvent::NewTarget(block.proof_target()));
+                                                prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.address));
                                             }
                                             _ => {
                                                 debug!("Unhandled message: {}", message.name());
