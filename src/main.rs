@@ -107,7 +107,7 @@ async fn main() {
     }
 
     if opt.beacon.is_none() {
-        error!("Pool address is required!");
+        error!("Beacon node address is required!");
         std::process::exit(1);
     }
     if opt.address.is_none() {
