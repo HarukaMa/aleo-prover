@@ -280,7 +280,7 @@ impl Prover {
         }
         self.current_epoch.store(epoch_number, Ordering::SeqCst);
         info!("Received new work: epoch {}", epoch_number);
-        let proof_target = self.current_proof_target.load(Ordering::SeqCst);
+        let current_proof_target = self.current_proof_target.clone();
 
         let current_epoch = self.current_epoch.clone();
         let terminator = self.terminator.clone();
@@ -304,6 +304,7 @@ impl Prover {
                     panic!("CUDA not yet supported");
                 } else {
                     for tp in thread_pools.iter() {
+                        let current_proof_target = current_proof_target.clone();
                         let current_epoch = current_epoch.clone();
                         let terminator = terminator.clone();
                         let client = client.clone();
@@ -314,6 +315,7 @@ impl Prover {
                         let coinbase_puzzle = coinbase_puzzle.clone();
                         joins.push(task::spawn(async move {
                             while !terminator.load(Ordering::SeqCst) {
+                                let current_proof_target = current_proof_target.clone();
                                 let terminator = terminator.clone();
                                 let epoch_challenge = epoch_challenge.clone();
                                 let address = address.clone();
@@ -344,11 +346,9 @@ impl Prover {
                                     // Ensure the share difficulty target is met.
                                     let proof_difficulty =
                                         u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
-                                    if proof_difficulty < proof_target {
-                                        debug!(
-                                            "Solution difficulty target not met: {} > {}",
-                                            proof_difficulty, proof_target
-                                        );
+                                    let target = current_proof_target.load(Ordering::SeqCst);
+                                    if proof_difficulty < target {
+                                        debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
                                         total_proofs.fetch_add(1, Ordering::SeqCst);
                                         continue;
                                     }
