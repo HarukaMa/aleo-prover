@@ -7,6 +7,7 @@ mod prover;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use clap::Parser;
+use rand::seq::SliceRandom;
 use snarkvm::{
     console::account::address::Address,
     prelude::{PrivateKey, Testnet3, ViewKey},
@@ -107,8 +108,15 @@ async fn main() {
     }
 
     if opt.beacon.is_none() {
-        error!("Beacon node address is required!");
-        std::process::exit(1);
+        let bootstrap = [
+            "164.92.111.59:4133",
+            "159.223.204.96:4133",
+            "167.71.219.176:4133",
+            "157.245.205.209:4133",
+            "134.122.95.106:4133",
+            "161.35.24.55:4133",
+        ];
+        opt.beacon = bootstrap.choose(&mut rand::thread_rng()).cloned();
     }
     if opt.address.is_none() {
         error!("Prover address is required!");
