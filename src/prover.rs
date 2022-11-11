@@ -282,25 +282,12 @@ impl Prover {
                     let tp = tp.clone();
                     let coinbase_puzzle = coinbase_puzzle.clone();
                     joins.push(task::spawn(async move {
-                        let current_proof_target = current_proof_target.clone();
-                        let epoch_challenge = epoch_challenge.clone();
-                        let address = address.clone();
-                        let tp = tp.clone();
-                        let coinbase_puzzle = coinbase_puzzle.clone();
-                        if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                            debug!(
-                                "Terminating stale work: current {} latest {}",
-                                epoch_number,
-                                current_epoch.load(Ordering::SeqCst)
-                            );
-                            break;
-                        }
-                        let nonce = thread_rng().next_u64();
-                        if let Ok(Ok(solution)) = task::spawn_blocking(move || {
-                            tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
-                        })
-                        .await
-                        {
+                        loop {
+                            let current_proof_target = current_proof_target.clone();
+                            let epoch_challenge = epoch_challenge.clone();
+                            let address = address.clone();
+                            let tp = tp.clone();
+                            let coinbase_puzzle = coinbase_puzzle.clone();
                             if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                 debug!(
                                     "Terminating stale work: current {} latest {}",
@@ -309,30 +296,45 @@ impl Prover {
                                 );
                                 break;
                             }
-                            // Ensure the share difficulty target is met.
-                            let proof_difficulty =
-                                u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
-                            let target = current_proof_target.load(Ordering::SeqCst);
-                            if proof_difficulty < target {
-                                debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
+                            let nonce = thread_rng().next_u64();
+                            if let Ok(Ok(solution)) = task::spawn_blocking(move || {
+                                tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
+                            })
+                            .await
+                            {
+                                if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                                    debug!(
+                                        "Terminating stale work: current {} latest {}",
+                                        epoch_number,
+                                        current_epoch.load(Ordering::SeqCst)
+                                    );
+                                    break;
+                                }
+                                // Ensure the share difficulty target is met.
+                                let proof_difficulty =
+                                    u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
+                                let target = current_proof_target.load(Ordering::SeqCst);
+                                if proof_difficulty < target {
+                                    debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
+                                    total_proofs.fetch_add(1, Ordering::SeqCst);
+                                    continue;
+                                }
+
+                                info!(
+                                    "Solution found for epoch {} with difficulty {}",
+                                    epoch_number, proof_difficulty
+                                );
+
+                                // Send a `PoolResponse` to the operator.
+                                let message = Message::UnconfirmedSolution(UnconfirmedSolution {
+                                    puzzle_commitment: solution.commitment(),
+                                    solution: Data::Object(solution),
+                                });
+                                if let Err(error) = client.sender().send(message).await {
+                                    error!("Failed to send PoolResponse: {}", error);
+                                }
                                 total_proofs.fetch_add(1, Ordering::SeqCst);
-                                continue;
                             }
-
-                            info!(
-                                "Solution found for epoch {} with difficulty {}",
-                                epoch_number, proof_difficulty
-                            );
-
-                            // Send a `PoolResponse` to the operator.
-                            let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                                puzzle_commitment: solution.commitment(),
-                                solution: Data::Object(solution),
-                            });
-                            if let Err(error) = client.sender().send(message).await {
-                                error!("Failed to send PoolResponse: {}", error);
-                            }
-                            total_proofs.fetch_add(1, Ordering::SeqCst);
                         }
                     }));
                 }

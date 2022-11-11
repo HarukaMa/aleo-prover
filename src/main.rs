@@ -70,7 +70,7 @@ async fn main() {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
 
-    let opt = Opt::parse();
+    let mut opt = Opt::parse();
     if opt.new_address {
         let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
         let view_key = ViewKey::try_from(&private_key).unwrap();
@@ -116,7 +116,12 @@ async fn main() {
             "134.122.95.106:4133",
             "161.35.24.55:4133",
         ];
-        opt.beacon = bootstrap.choose(&mut rand::thread_rng()).cloned();
+        opt.beacon = bootstrap
+            .choose(&mut rand::thread_rng())
+            .cloned()
+            .unwrap()
+            .to_string()
+            .into();
     }
     if opt.address.is_none() {
         error!("Prover address is required!");
