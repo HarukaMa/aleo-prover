@@ -24,7 +24,7 @@ use tokio::{
     sync::{mpsc, RwLock},
     task,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
 
@@ -36,7 +36,6 @@ pub struct Prover {
     cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<DirectClient>,
-    terminator: Arc<AtomicBool>,
     current_epoch: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
@@ -96,13 +95,12 @@ impl Prover {
             thread_pools.push(Arc::new(pool));
         }
         info!(
-            "Created {} prover thread pools with {} threads each",
+            "Created {} prover thread pools with {} threads in each pool",
             thread_pools.len(),
             pool_threads
         );
 
         let (sender, mut receiver) = mpsc::channel(1024);
-        let terminator = Arc::new(AtomicBool::new(false));
 
         info!("Initializing universal SRS");
         let srs = UniversalSRS::<Testnet3>::load().expect("Failed to load SRS");
@@ -119,7 +117,6 @@ impl Prover {
             cuda_jobs,
             sender: Arc::new(sender),
             client,
-            terminator,
             current_epoch: Default::default(),
             total_proofs: Default::default(),
             valid_shares: Default::default(),
@@ -145,27 +142,6 @@ impl Prover {
             }
         });
         debug!("Created prover message handler");
-
-        let terminator = prover.terminator.clone();
-
-        task::spawn(async move {
-            let mut counter = false;
-            loop {
-                if terminator.load(Ordering::SeqCst) {
-                    if counter {
-                        debug!("Long terminator detected, resetting");
-                        terminator.store(false, Ordering::SeqCst);
-                        counter = false;
-                    } else {
-                        counter = true;
-                    }
-                } else {
-                    counter = false;
-                }
-                tokio::time::sleep(Duration::from_secs(1)).await;
-            }
-        });
-        debug!("Created prover terminator guard");
 
         let total_proofs = prover.total_proofs.clone();
         task::spawn(async move {
@@ -283,7 +259,6 @@ impl Prover {
         let current_proof_target = self.current_proof_target.clone();
 
         let current_epoch = self.current_epoch.clone();
-        let terminator = self.terminator.clone();
         let client = self.client.clone();
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
@@ -292,88 +267,76 @@ impl Prover {
         let coinbase_puzzle = self.coinbase_puzzle.clone();
 
         task::spawn(async move {
-            terminator.store(true, Ordering::SeqCst);
-            while terminator.load(Ordering::SeqCst) {
-                // Wait until the prover terminator is set to false.
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-
             let _ = task::spawn(async move {
                 let mut joins = Vec::new();
                 if let Some(cuda) = cuda {
-                    panic!("CUDA not yet supported");
-                } else {
-                    for tp in thread_pools.iter() {
+                    warn!("This version of the prover is only using the first GPU");
+                }
+                for (_, tp) in thread_pools.iter().enumerate() {
+                    let current_proof_target = current_proof_target.clone();
+                    let current_epoch = current_epoch.clone();
+                    let client = client.clone();
+                    let epoch_challenge = epoch_challenge.clone();
+                    let address = address.clone();
+                    let total_proofs = total_proofs.clone();
+                    let tp = tp.clone();
+                    let coinbase_puzzle = coinbase_puzzle.clone();
+                    joins.push(task::spawn(async move {
                         let current_proof_target = current_proof_target.clone();
-                        let current_epoch = current_epoch.clone();
-                        let terminator = terminator.clone();
-                        let client = client.clone();
                         let epoch_challenge = epoch_challenge.clone();
                         let address = address.clone();
-                        let total_proofs = total_proofs.clone();
                         let tp = tp.clone();
                         let coinbase_puzzle = coinbase_puzzle.clone();
-                        joins.push(task::spawn(async move {
-                            while !terminator.load(Ordering::SeqCst) {
-                                let current_proof_target = current_proof_target.clone();
-                                let terminator = terminator.clone();
-                                let epoch_challenge = epoch_challenge.clone();
-                                let address = address.clone();
-                                let tp = tp.clone();
-                                let coinbase_puzzle = coinbase_puzzle.clone();
-                                if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                                    debug!(
-                                        "Terminating stale work: current {} latest {}",
-                                        epoch_number,
-                                        current_epoch.load(Ordering::SeqCst)
-                                    );
-                                    break;
-                                }
-                                let nonce = thread_rng().next_u64();
-                                if let Ok(Ok(solution)) = task::spawn_blocking(move || {
-                                    tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
-                                })
-                                .await
-                                {
-                                    if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                                        debug!(
-                                            "Terminating stale work: current {} latest {}",
-                                            epoch_number,
-                                            current_epoch.load(Ordering::SeqCst)
-                                        );
-                                        break;
-                                    }
-                                    // Ensure the share difficulty target is met.
-                                    let proof_difficulty =
-                                        u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
-                                    let target = current_proof_target.load(Ordering::SeqCst);
-                                    if proof_difficulty < target {
-                                        debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
-                                        total_proofs.fetch_add(1, Ordering::SeqCst);
-                                        continue;
-                                    }
-
-                                    info!(
-                                        "Solution found for epoch {} with difficulty {}",
-                                        epoch_number, proof_difficulty
-                                    );
-
-                                    // Send a `PoolResponse` to the operator.
-                                    let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                                        puzzle_commitment: solution.commitment(),
-                                        solution: Data::Object(solution),
-                                    });
-                                    if let Err(error) = client.sender().send(message).await {
-                                        error!("Failed to send PoolResponse: {}", error);
-                                    }
-                                    total_proofs.fetch_add(1, Ordering::SeqCst);
-                                }
+                        if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                            debug!(
+                                "Terminating stale work: current {} latest {}",
+                                epoch_number,
+                                current_epoch.load(Ordering::SeqCst)
+                            );
+                            break;
+                        }
+                        let nonce = thread_rng().next_u64();
+                        if let Ok(Ok(solution)) = task::spawn_blocking(move || {
+                            tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
+                        })
+                        .await
+                        {
+                            if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                                debug!(
+                                    "Terminating stale work: current {} latest {}",
+                                    epoch_number,
+                                    current_epoch.load(Ordering::SeqCst)
+                                );
+                                break;
                             }
-                        }));
-                    }
+                            // Ensure the share difficulty target is met.
+                            let proof_difficulty =
+                                u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
+                            let target = current_proof_target.load(Ordering::SeqCst);
+                            if proof_difficulty < target {
+                                debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
+                                total_proofs.fetch_add(1, Ordering::SeqCst);
+                                continue;
+                            }
+
+                            info!(
+                                "Solution found for epoch {} with difficulty {}",
+                                epoch_number, proof_difficulty
+                            );
+
+                            // Send a `PoolResponse` to the operator.
+                            let message = Message::UnconfirmedSolution(UnconfirmedSolution {
+                                puzzle_commitment: solution.commitment(),
+                                solution: Data::Object(solution),
+                            });
+                            if let Err(error) = client.sender().send(message).await {
+                                error!("Failed to send PoolResponse: {}", error);
+                            }
+                            total_proofs.fetch_add(1, Ordering::SeqCst);
+                        }
+                    }));
                 }
                 futures::future::join_all(joins).await;
-                terminator.store(false, Ordering::SeqCst);
             });
         });
     }
