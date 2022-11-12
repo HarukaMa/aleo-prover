@@ -194,7 +194,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                             }
                                             Message::Pong(message) => {
                                                 connected.store(true, Ordering::SeqCst);
-                                                if let Err(e) = client_sender.send(Message::PuzzleRequest(PuzzleRequest {})).await {
+                                                if let Err(e) = client.sender().send(Message::PuzzleRequest(PuzzleRequest {})).await {
                                                     error!("Failed to send puzzle request: {}", e);
                                                 }
                                             }
