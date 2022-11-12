@@ -138,8 +138,8 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     sleep(Duration::from_secs(5)).await;
                                                     break;
                                                 }
-                                                if node_type != NodeType::Beacon {
-                                                    error!("Peer is not a beacon");
+                                                if node_type != NodeType::Beacon && node_type != NodeType::Validator {
+                                                    error!("Peer is not a beacon or validator");
                                                     sleep(Duration::from_secs(5)).await;
                                                     break;
                                                 }
