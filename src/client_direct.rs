@@ -201,7 +201,15 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                             Message::PuzzleResponse(PuzzleResponse {
                                                 epoch_challenge, block
                                             }) => {
-                                                let block = block.deserialize().await.unwrap();
+                                                let block = match block.deserialize().await {
+                                                    Ok(block) => block,
+                                                    Err(error) => {
+                                                        error!("Error deserializing block: {:?}", error);
+                                                        sleep(Duration::from_secs(5)).await;
+                                                        break;
+                                                    }
+                                                };
+                                                debug!("Block: {:?}", block.header().metadata());
                                                 if let Err(e) = prover_sender.send(ProverEvent::NewTarget(block.proof_target())).await {
                                                     error!("Error sending new target to prover: {}", e);
                                                 } else {

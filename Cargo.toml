@@ -12,8 +12,8 @@ license = "GPL-3.0-or-later"
 #snarkos = { path = "../../src/snarkOS" }
 #snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
 #snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-snarkvm = "0.9.5"
-snarkvm-algorithms = "0.9.5"
+snarkvm = "0.9.6"
+snarkvm-algorithms = "0.9.6"
 snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 rand = "0.8.5"

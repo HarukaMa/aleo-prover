@@ -298,7 +298,14 @@ impl Prover {
                             }
                             let nonce = thread_rng().next_u64();
                             if let Ok(Ok(solution)) = task::spawn_blocking(move || {
-                                tp.install(|| coinbase_puzzle.prove(&epoch_challenge, address, nonce))
+                                tp.install(|| {
+                                    coinbase_puzzle.prove(
+                                        &epoch_challenge,
+                                        address,
+                                        nonce,
+                                        Option::from(current_proof_target.load(Ordering::SeqCst)),
+                                    )
+                                })
                             })
                             .await
                             {
@@ -313,12 +320,6 @@ impl Prover {
                                 // Ensure the share difficulty target is met.
                                 let proof_difficulty =
                                     u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
-                                let target = current_proof_target.load(Ordering::SeqCst);
-                                if proof_difficulty < target {
-                                    debug!("Solution difficulty target not met: {} > {}", proof_difficulty, target);
-                                    total_proofs.fetch_add(1, Ordering::SeqCst);
-                                    continue;
-                                }
 
                                 info!(
                                     "Solution found for epoch {} with difficulty {}",
@@ -333,6 +334,8 @@ impl Prover {
                                 if let Err(error) = client.sender().send(message).await {
                                     error!("Failed to send PoolResponse: {}", error);
                                 }
+                                total_proofs.fetch_add(1, Ordering::SeqCst);
+                            } else {
                                 total_proofs.fetch_add(1, Ordering::SeqCst);
                             }
                         }
