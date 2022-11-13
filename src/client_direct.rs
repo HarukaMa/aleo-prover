@@ -24,7 +24,7 @@ use snarkvm::{
     prelude::{Block, FromBytes, Network, Testnet3},
 };
 use tokio::{
-    net::TcpStream,
+    net::{TcpListener, TcpStream},
     sync::{
         mpsc,
         mpsc::{Receiver, Sender},
@@ -89,6 +89,33 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                 }
             }
         });
+
+        // incoming socket
+        task::spawn(async move {
+            let (_, listener) = match TcpListener::bind("0.0.0.0:4140").await {
+                Ok(listener) => {
+                    let local_ip = listener.local_addr().expect("Could not get local ip");
+                    info!("Listening on {}", local_ip);
+                    (local_ip, listener)
+                }
+                Err(e) => {
+                    panic!("Unable to listen on port 4140: {:?}", e);
+                }
+            };
+            loop {
+                match listener.accept().await {
+                    Ok((stream, peer_addr)) => {
+                        info!("New connection from: {}", peer_addr);
+                        // snarkOS is not checking anything so we just hang up
+                        drop(stream);
+                    }
+                    Err(e) => {
+                        error!("Error accepting connection: {:?}", e);
+                    }
+                }
+            }
+        });
+
         debug!("Created coinbase puzzle request task");
         loop {
             info!("Connecting to server...");
@@ -209,7 +236,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                         break;
                                                     }
                                                 };
-                                                debug!("Block: {:?}", block.header().metadata());
                                                 if let Err(e) = prover_sender.send(ProverEvent::NewTarget(block.proof_target())).await {
                                                     error!("Error sending new target to prover: {}", e);
                                                 } else {
@@ -220,6 +246,11 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 } else {
                                                     debug!("Sent new work to prover");
                                                 }
+                                            }
+                                            Message::Disconnect(message) => {
+                                                error!("Peer disconnected: {:?}", message.reason);
+                                                sleep(Duration::from_secs(5)).await;
+                                                break;
                                             }
                                             _ => {
                                                 debug!("Unhandled message: {}", message.name());
