@@ -171,7 +171,7 @@ impl Prover {
                 info!(
                     "{}",
                     Cyan.normal().paint(format!(
-                        "Total solutions: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
+                        "Total solutions: {} (1m: {} c/s, 5m: {} c/s, 15m: {} c/s, 30m: {} c/s, 60m: {} c/s)",
                         proofs,
                         calculate_proof_rate(proofs, m1, 1),
                         calculate_proof_rate(proofs, m5, 5),
