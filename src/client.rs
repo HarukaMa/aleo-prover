@@ -200,7 +200,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                                     error!("Unexpected job_id length: {}", job_id_bytes.len());
                                                     continue;
                                                 }
-                                                let epoch = u64::from_le_bytes(job_id_bytes[0..8].try_into().unwrap());
+                                                let epoch = u32::from_le_bytes(job_id_bytes[0..4].try_into().unwrap());
                                                 if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch, epoch_challenge, address.unwrap_or_else(|| pool_address.clone().expect("No pool address defined")))).await {
                                                     error!("Error sending work to prover: {}", e);
                                                 } else {

@@ -116,8 +116,8 @@ async fn main() {
     }
     let address = opt.address.unwrap();
     let pool = opt.pool.unwrap();
-    if let Err(e) = beacon.to_socket_addrs() {
-        error!("Invalid pool address {}: {}", beacon, e);
+    if let Err(e) = pool.to_socket_addrs() {
+        error!("Invalid pool address {}: {}", pool, e);
         std::process::exit(1);
     }
 

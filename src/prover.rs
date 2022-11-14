@@ -8,34 +8,29 @@ use std::{
     time::Duration,
 };
 
+use aleo_stratum::message::StratumMessage;
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use json_rpc_types::Id;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use snarkos_node_messages::{Data, UnconfirmedSolution};
 use snarkvm::{
     console::account::address::Address,
     prelude::{CoinbasePuzzle, Environment, FromBytes, Testnet3, ToBytes},
     synthesizer::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
 };
-use snarkvm_algorithms::{crypto_hash::sha256d_to_u64, polycommit::kzg10::UniversalParams};
-use tokio::{
-    sync::{mpsc, RwLock},
-    task,
-};
+use snarkvm_algorithms::crypto_hash::sha256d_to_u64;
+use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client::Client;
-
-type Message = snarkos_node_messages::Message<Testnet3>;
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
     cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
-    client: Arc<DirectClient>,
+    client: Arc<Client>,
     current_epoch: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
@@ -47,14 +42,14 @@ pub struct Prover {
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
     NewTarget(u64),
-    NewWork(u32, EpochChallenge<Testnet3>, Address<Testnet3>),
+    NewWork(u32, String, String),
     Result(bool, Option<String>),
 }
 
 impl Prover {
     pub async fn init(
         threads: u16,
-        client: Arc<DirectClient>,
+        client: Arc<Client>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
@@ -133,7 +128,15 @@ impl Prover {
                         p.new_target(target);
                     }
                     ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
-                        p.new_work(epoch_number, epoch_challenge, address).await;
+                        p.new_work(
+                            epoch_number,
+                            EpochChallenge::<Testnet3>::from_bytes_le(
+                                &*hex::decode(epoch_challenge.as_bytes()).unwrap(),
+                            )
+                            .unwrap(),
+                            Address::<Testnet3>::from_str(&address).unwrap(),
+                        )
+                        .await;
                     }
                     ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
@@ -327,10 +330,14 @@ impl Prover {
                                 );
 
                                 // Send a `PoolResponse` to the operator.
-                                let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                                    puzzle_commitment: solution.commitment(),
-                                    solution: Data::Object(solution),
-                                });
+                                let message = StratumMessage::Submit(
+                                    Id::Num(0),
+                                    client.address.to_string(),
+                                    hex::encode(epoch_number.to_le_bytes()),
+                                    hex::encode(nonce.to_bytes_le().unwrap()),
+                                    hex::encode(solution.commitment().to_bytes_le().unwrap()),
+                                    hex::encode(solution.proof().to_bytes_le().unwrap()),
+                                );
                                 if let Err(error) = client.sender().send(message).await {
                                     error!("Failed to send PoolResponse: {}", error);
                                 }
