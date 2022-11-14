@@ -196,7 +196,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                             }
                                             StratumMessage::Notify(job_id, epoch_challenge, address, _) => {
                                                 let job_id_bytes = hex::decode(job_id).expect("Failed to decode job_id");
-                                                if job_id_bytes.len() != 8 {
+                                                if job_id_bytes.len() != 4 {
                                                     error!("Unexpected job_id length: {}", job_id_bytes.len());
                                                     continue;
                                                 }
