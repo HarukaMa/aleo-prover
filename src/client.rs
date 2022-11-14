@@ -109,7 +109,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                             continue;
                                         }
                                     }
-                                    info!("Handshake successful");
+                                    info!("Handshake success");
                                 }
                                 _ => {
                                     error!("Unexpected message: {:?}", message.name());
@@ -137,7 +137,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                             }
                             Some(Ok(message)) => match message {
                                 StratumMessage::Response(_, _, _) => {
-                                    info!("Authorization successful");
+                                    info!("Authorization success");
                                 }
                                 _ => {
                                     error!("Unexpected message: {:?}", message.name());
