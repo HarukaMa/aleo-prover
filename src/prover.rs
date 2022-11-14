@@ -26,7 +26,7 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-use crate::client_direct::DirectClient;
+use crate::client::Client;
 
 type Message = snarkos_node_messages::Message<Testnet3>;
 

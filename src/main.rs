@@ -1,7 +1,7 @@
 extern crate core;
 
 #[forbid(unsafe_code)]
-mod client_direct;
+mod client;
 mod prover;
 
 use std::{net::ToSocketAddrs, sync::Arc};
@@ -16,7 +16,7 @@ use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
 use crate::{
-    client_direct::{start, DirectClient},
+    client::{start, Client},
     prover::Prover,
 };
 
@@ -31,9 +31,9 @@ struct Opt {
     #[clap(short = 'a', long = "address")]
     address: Option<Address<Testnet3>>,
 
-    /// Beacon node address
-    #[clap(short = 'b', long = "beacon")]
-    beacon: Option<String>,
+    /// Pool server address
+    #[clap(short = 'p', long = "pool")]
+    pool: Option<String>,
 
     /// Number of threads
     #[clap(short = 't', long = "threads")]
@@ -107,28 +107,15 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
-    if opt.beacon.is_none() {
-        let bootstrap = [
-            "164.92.111.59:4133",
-            "159.223.204.96:4133",
-            "167.71.219.176:4133",
-            "157.245.205.209:4133",
-            "134.122.95.106:4133",
-            "161.35.24.55:4133",
-        ];
-        opt.beacon = bootstrap
-            .choose(&mut rand::thread_rng())
-            .cloned()
-            .unwrap()
-            .to_string()
-            .into();
+    if opt.pool.is_none() {
+        error!("Pool address is required!");
     }
     if opt.address.is_none() {
         error!("Prover address is required!");
         std::process::exit(1);
     }
     let address = opt.address.unwrap();
-    let beacon = opt.beacon.unwrap();
+    let pool = opt.pool.unwrap();
     if let Err(e) = beacon.to_socket_addrs() {
         error!("Invalid pool address {}: {}", beacon, e);
         std::process::exit(1);
@@ -162,7 +149,7 @@ async fn main() {
     //     debug!("Node initialized");
     // }
 
-    let client = DirectClient::init(address, beacon);
+    let client = Client::init(address, pool);
 
     let prover: Arc<Prover> = match Prover::init(threads, client.clone(), cuda, cuda_jobs).await {
         Ok(prover) => prover,
