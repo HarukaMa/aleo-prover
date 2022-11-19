@@ -1,8 +1,7 @@
 use std::{
-    collections::{HashMap, VecDeque},
-    str::FromStr,
+    collections::VecDeque,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -10,20 +9,16 @@ use std::{
 
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
-use json_rpc_types::Id;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkos_node_messages::{Data, UnconfirmedSolution};
 use snarkvm::{
     console::account::address::Address,
-    prelude::{CoinbasePuzzle, Environment, FromBytes, Testnet3, ToBytes},
-    synthesizer::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
+    prelude::{CoinbasePuzzle, Testnet3, ToBytes},
+    synthesizer::{EpochChallenge, PuzzleConfig, UniversalSRS},
 };
-use snarkvm_algorithms::{crypto_hash::sha256d_to_u64, polycommit::kzg10::UniversalParams};
-use tokio::{
-    sync::{mpsc, RwLock},
-    task,
-};
+use snarkvm_algorithms::crypto_hash::sha256d_to_u64;
+use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
@@ -33,7 +28,7 @@ type Message = snarkos_node_messages::Message<Testnet3>;
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
-    cuda_jobs: Option<u8>,
+    _cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<DirectClient>,
     current_epoch: Arc<AtomicU32>,
@@ -48,12 +43,13 @@ pub struct Prover {
 pub enum ProverEvent {
     NewTarget(u64),
     NewWork(u32, EpochChallenge<Testnet3>, Address<Testnet3>),
-    Result(bool, Option<String>),
+    _Result(bool, Option<String>),
 }
 
 impl Prover {
     pub async fn init(
         threads: u16,
+        thread_pool_size: u8,
         client: Arc<DirectClient>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
@@ -62,24 +58,15 @@ impl Prover {
         let pool_count;
         let pool_threads;
         if cuda.is_none() {
-            if threads < 12 {
+            if threads < thread_pool_size as u16 {
                 pool_count = 1;
-                pool_threads = threads;
-            } else if threads % 12 == 0 {
-                pool_count = threads / 12;
-                pool_threads = 12;
-            } else if threads % 10 == 0 {
-                pool_count = threads / 10;
-                pool_threads = 10;
-            } else if threads % 8 == 0 {
-                pool_count = threads / 8;
-                pool_threads = 8;
+                pool_threads = thread_pool_size as u16;
             } else {
-                pool_count = threads / 6;
-                pool_threads = 6;
+                pool_count = threads / thread_pool_size as u16;
+                pool_threads = thread_pool_size as u16;
             }
         } else {
-            pool_threads = 2;
+            pool_threads = thread_pool_size as u16;
             pool_count = (cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8) as u16;
         }
         for index in 0..pool_count {
@@ -114,7 +101,7 @@ impl Prover {
         let prover = Arc::new(Self {
             thread_pools: Arc::new(thread_pools),
             cuda,
-            cuda_jobs,
+            _cuda_jobs: cuda_jobs,
             sender: Arc::new(sender),
             client,
             current_epoch: Default::default(),
@@ -135,7 +122,7 @@ impl Prover {
                     ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
                         p.new_work(epoch_number, epoch_challenge, address).await;
                     }
-                    ProverEvent::Result(success, error) => {
+                    ProverEvent::_Result(success, error) => {
                         p.result(success, error).await;
                     }
                 }
@@ -168,7 +155,7 @@ impl Prover {
                 info!(
                     "{}",
                     Cyan.normal().paint(format!(
-                        "Total solutions: {} (1m: {} p/s, 5m: {} p/s, 15m: {} p/s, 30m: {} p/s, 60m: {} p/s)",
+                        "Total solutions: {} (1m: {} c/s, 5m: {} c/s, 15m: {} c/s, 30m: {} c/s, 60m: {} c/s)",
                         proofs,
                         calculate_proof_rate(proofs, m1, 1),
                         calculate_proof_rate(proofs, m5, 5),
@@ -263,13 +250,12 @@ impl Prover {
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
-        let cuda_jobs = self.cuda_jobs;
         let coinbase_puzzle = self.coinbase_puzzle.clone();
 
         task::spawn(async move {
             let _ = task::spawn(async move {
                 let mut joins = Vec::new();
-                if let Some(cuda) = cuda {
+                if let Some(_) = cuda {
                     warn!("This version of the prover is only using the first GPU");
                 }
                 for (_, tp) in thread_pools.iter().enumerate() {
