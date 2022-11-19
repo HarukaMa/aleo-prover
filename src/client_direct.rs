@@ -7,7 +7,6 @@ use std::{
 };
 
 use futures_util::sink::SinkExt;
-use json_rpc_types::Id;
 use snarkos_node_executor::{NodeType, Status};
 use snarkos_node_messages::{
     ChallengeRequest,
@@ -74,7 +73,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
         let genesis_header = *Block::<Testnet3>::from_bytes_le(Testnet3::genesis_bytes())
             .unwrap()
             .header();
-        let mut id = 1;
         let connected = Arc::new(AtomicBool::new(false));
         let client_sender = client.sender();
 
@@ -124,7 +122,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                     Ok(socket) => {
                         info!("Connected to {}", client.server);
                         let mut framed = Framed::new(socket, MessageCodec::default());
-                        let pool_address: Option<String> = None;
                         let challenge_request = Message::ChallengeRequest(ChallengeRequest {
                             version: Message::VERSION,
                             fork_depth: 4096,
@@ -132,7 +129,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                             status: Status::Ready,
                             listener_port: 4140,
                         });
-                        id += 1;
                         if let Err(e) = framed.send(challenge_request).await {
                             error!("Error sending challenge request: {}", e);
                         } else {
@@ -155,10 +151,9 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                         match message {
                                             Message::ChallengeRequest(ChallengeRequest {
                                                 version,
-                                                fork_depth,
+                                                fork_depth: _,
                                                 node_type,
-                                                status: peer_status,
-                                                listener_port,
+                                                ..
                                             }) => {
                                                 if version < Message::VERSION {
                                                     error!("Peer is running an older version of the protocol");
@@ -211,7 +206,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     }
                                                 }
                                             }
-                                            Message::Ping(message) => {
+                                            Message::Ping(_) => {
                                                 let pong = Message::Pong(Pong { is_fork: None });
                                                 if let Err(e) = framed.send(pong).await {
                                                     error!("Error sending pong: {:?}", e);
@@ -219,7 +214,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     debug!("Sent pong");
                                                 }
                                             }
-                                            Message::Pong(message) => {
+                                            Message::Pong(_) => {
                                                 connected.store(true, Ordering::SeqCst);
                                                 if let Err(e) = client.sender().send(Message::PuzzleRequest(PuzzleRequest {})).await {
                                                     error!("Failed to send puzzle request: {}", e);

@@ -1,8 +1,8 @@
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::VecDeque,
     str::FromStr,
     sync::{
-        atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+        atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
     time::Duration,
@@ -16,8 +16,8 @@ use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkvm::{
     console::account::address::Address,
-    prelude::{CoinbasePuzzle, Environment, FromBytes, Testnet3, ToBytes},
-    synthesizer::{CoinbaseProvingKey, EpochChallenge, PuzzleConfig, UniversalSRS},
+    prelude::{CoinbasePuzzle, FromBytes, Testnet3, ToBytes},
+    synthesizer::{EpochChallenge, PuzzleConfig, UniversalSRS},
 };
 use snarkvm_algorithms::crypto_hash::sha256d_to_u64;
 use tokio::{sync::mpsc, task};
@@ -28,7 +28,7 @@ use crate::client::Client;
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
-    cuda_jobs: Option<u8>,
+    _cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
     client: Arc<Client>,
     current_epoch: Arc<AtomicU32>,
@@ -49,6 +49,7 @@ pub enum ProverEvent {
 impl Prover {
     pub async fn init(
         threads: u16,
+        thread_pool_size: u8,
         client: Arc<Client>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
@@ -57,24 +58,15 @@ impl Prover {
         let pool_count;
         let pool_threads;
         if cuda.is_none() {
-            if threads < 12 {
+            if threads < thread_pool_size as u16 {
                 pool_count = 1;
-                pool_threads = threads;
-            } else if threads % 12 == 0 {
-                pool_count = threads / 12;
-                pool_threads = 12;
-            } else if threads % 10 == 0 {
-                pool_count = threads / 10;
-                pool_threads = 10;
-            } else if threads % 8 == 0 {
-                pool_count = threads / 8;
-                pool_threads = 8;
+                pool_threads = thread_pool_size as u16;
             } else {
-                pool_count = threads / 6;
-                pool_threads = 6;
+                pool_count = threads / thread_pool_size as u16;
+                pool_threads = thread_pool_size as u16;
             }
         } else {
-            pool_threads = 2;
+            pool_threads = thread_pool_size as u16;
             pool_count = (cuda_jobs.unwrap_or(1) * cuda.clone().unwrap().len() as u8) as u16;
         }
         for index in 0..pool_count {
@@ -109,7 +101,7 @@ impl Prover {
         let prover = Arc::new(Self {
             thread_pools: Arc::new(thread_pools),
             cuda,
-            cuda_jobs,
+            _cuda_jobs: cuda_jobs,
             sender: Arc::new(sender),
             client,
             current_epoch: Default::default(),
@@ -266,13 +258,12 @@ impl Prover {
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
-        let cuda_jobs = self.cuda_jobs;
         let coinbase_puzzle = self.coinbase_puzzle.clone();
 
         task::spawn(async move {
             let _ = task::spawn(async move {
                 let mut joins = Vec::new();
-                if let Some(cuda) = cuda {
+                if let Some(_) = cuda {
                     warn!("This version of the prover is only using the first GPU");
                 }
                 for (_, tp) in thread_pools.iter().enumerate() {

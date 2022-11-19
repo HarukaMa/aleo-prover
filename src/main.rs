@@ -7,7 +7,6 @@ mod prover;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use clap::Parser;
-use rand::seq::SliceRandom;
 use snarkvm::{
     console::account::address::Address,
     prelude::{PrivateKey, Testnet3, ViewKey},
@@ -35,9 +34,13 @@ struct Opt {
     #[clap(short = 'p', long = "pool")]
     pool: Option<String>,
 
-    /// Number of threads
+    /// Number of threads, defaults to number of CPU threads
     #[clap(short = 't', long = "threads")]
     threads: Option<u16>,
+
+    /// Thread pool size, number of threads in each thread pool, defaults to 4
+    #[clap(short = 'i', long = "thread-pool-size")]
+    thread_pool_size: Option<u8>,
 
     /// Output log to file
     #[clap(short = 'o', long = "log")]
@@ -70,7 +73,7 @@ async fn main() {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
 
-    let mut opt = Opt::parse();
+    let opt = Opt::parse();
     if opt.new_address {
         let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
         let view_key = ViewKey::try_from(&private_key).unwrap();
@@ -122,6 +125,7 @@ async fn main() {
     }
 
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
+    let thread_pool_size = opt.thread_pool_size.unwrap_or(4);
 
     let cuda: Option<Vec<i16>>;
     let cuda_jobs: Option<u8>;
@@ -151,7 +155,7 @@ async fn main() {
 
     let client = Client::init(address, pool);
 
-    let prover: Arc<Prover> = match Prover::init(threads, client.clone(), cuda, cuda_jobs).await {
+    let prover: Arc<Prover> = match Prover::init(threads, thread_pool_size, client.clone(), cuda, cuda_jobs).await {
         Ok(prover) => prover,
         Err(e) => {
             error!("Unable to initialize prover: {}", e);

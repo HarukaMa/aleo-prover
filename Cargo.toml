@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -12,13 +12,13 @@ license = "GPL-3.0-or-later"
 #snarkos = { path = "../../src/snarkOS" }
 #snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
 #snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-snarkvm = "0.9.6"
-snarkvm-algorithms = "0.9.6"
-#snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
-#snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
+snarkvm = "0.9.8"
+snarkvm-algorithms = "0.9.8"
+snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
+snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 rand = "0.8.5"
 num_cpus = "1.14.0"
-rayon = "1.5.3"
+rayon = "1.6.0"
 anyhow = "1.0.66"
 tracing = "0.1.37"
 tracing-subscriber = "0.3.16"
@@ -39,11 +39,11 @@ branch = "testnet3-new"
 #path = "../aleo-operator/stratum"
 
 [dependencies.clap]
-version = "4.0.23"
+version = "4.0.26"
 features = ["derive"]
 
 [dependencies.tokio]
-version = "1.21.2"
+version = "1.22.0"
 features = [
     "rt-multi-thread",
     "macros",
@@ -56,7 +56,7 @@ version = "0.7.4"
 features = ["codec"]
 
 [dependencies.serde_json]
-version = "1.0.87"
+version = "1.0.88"
 features = ["preserve_order"]
 
 [features]
