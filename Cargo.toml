@@ -60,7 +60,7 @@ version = "1.0.82"
 features = ["preserve_order"]
 
 [features]
-cuda = ["snarkvm/cuda"]
+#cuda = ["snarkvm/cuda"]
 
 [profile.dev]
 opt-level = 1
