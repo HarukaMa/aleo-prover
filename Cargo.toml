@@ -68,7 +68,6 @@ debug-assertions = false
 
 [profile.release]
 opt-level = 3
-debug = 1
 lto = true
 codegen-units = 1
 panic = "abort"
