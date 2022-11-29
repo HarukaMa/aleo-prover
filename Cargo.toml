@@ -10,12 +10,14 @@ license = "GPL-3.0-or-later"
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
 #snarkos = { path = "../../src/snarkOS" }
-#snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-#snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-snarkvm = "0.9.6"
-snarkvm-algorithms = "0.9.6"
-snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
-snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
+snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "feat/snarkvm-cuda" }
+snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "feat/snarkvm-cuda" }
+#snarkvm = "0.9.6"
+#snarkvm-algorithms = "0.9.6"
+#snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
+#snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
+snarkos-node-executor = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
+snarkos-node-messages = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
 rand = "0.8.5"
 num_cpus = "1.13.1"
 rayon = "1.5.1"
@@ -60,7 +62,7 @@ version = "1.0.82"
 features = ["preserve_order"]
 
 [features]
-#cuda = ["snarkvm/cuda"]
+cuda = ["snarkvm/cuda"]
 
 [profile.dev]
 opt-level = 1
