@@ -14,25 +14,23 @@ snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "feat/snarkv
 snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "feat/snarkvm-cuda" }
 #snarkvm = "0.9.6"
 #snarkvm-algorithms = "0.9.6"
-#snarkos-node-executor = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 #snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
-snarkos-node-executor = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
 snarkos-node-messages = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
 rand = "0.8.5"
-num_cpus = "1.13.1"
-rayon = "1.5.1"
-anyhow = "1.0.53"
-tracing = "0.1.30"
-tracing-subscriber = "0.3.8"
-tokio-stream = "0.1.8"
-futures = "0.3.21"
-futures-util = "0.3.21"
-crossbeam = "0.8.1"
-bytes = "1.1.0"
+num_cpus = "1.14.0"
+rayon = "1.6.0"
+anyhow = "1.0.66"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
+tokio-stream = "0.1.11"
+futures = "0.3.25"
+futures-util = "0.3.25"
+crossbeam = "0.8.2"
+bytes = "1.3.0"
 bincode = "1.3.3"
 byteorder = "1.4.3"
 ansi_term = "0.12.1"
-json-rpc-types = "1.0.3"
+json-rpc-types = "1.2.0"
 hex = "0.4.3"
 
 #[dependencies.aleo-stratum]
@@ -41,11 +39,11 @@ hex = "0.4.3"
 #path = "../aleo-operator/stratum"
 
 [dependencies.clap]
-version = "4.0.10"
+version = "4.0.28"
 features = ["derive"]
 
 [dependencies.tokio]
-version = "1.16.1"
+version = "1.22.0"
 features = [
     "rt-multi-thread",
     "macros",
@@ -54,11 +52,11 @@ features = [
 ]
 
 [dependencies.tokio-util]
-version = "0.7.0"
+version = "0.7.4"
 features = ["codec"]
 
 [dependencies.serde_json]
-version = "1.0.82"
+version = "1.0.89"
 features = ["preserve_order"]
 
 [features]

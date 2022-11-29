@@ -7,16 +7,17 @@ use std::{
 };
 
 use futures_util::sink::SinkExt;
-use snarkos_node_executor::{NodeType, Status};
 use snarkos_node_messages::{
     ChallengeRequest,
     ChallengeResponse,
     Data,
     MessageCodec,
+    NodeType,
     Ping,
     Pong,
     PuzzleRequest,
     PuzzleResponse,
+    Status,
 };
 use snarkvm::{
     console::account::address::Address,
