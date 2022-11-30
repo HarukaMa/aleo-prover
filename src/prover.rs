@@ -18,7 +18,7 @@ use snarkvm::{
     synthesizer::{EpochChallenge, PuzzleConfig, UniversalSRS},
 };
 use snarkvm_algorithms::crypto_hash::sha256d_to_u64;
-use tokio::{sync::mpsc, task};
+use tokio::{runtime::Runtime, sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
@@ -283,12 +283,16 @@ impl Prover {
                         let nonce = thread_rng().next_u64();
                         if let Ok(Ok(solution)) = task::spawn_blocking(move || {
                             tp.install(|| {
-                                futures::executor::block_on(coinbase_puzzle.prove(
-                                    &epoch_challenge,
-                                    address,
-                                    nonce,
-                                    Option::from(current_proof_target.load(Ordering::SeqCst)),
-                                ))
+                                Runtime::new().unwrap().handle().block_on(async {
+                                    coinbase_puzzle
+                                        .prove(
+                                            &epoch_challenge,
+                                            address,
+                                            nonce,
+                                            Option::from(current_proof_target.load(Ordering::SeqCst)),
+                                        )
+                                        .await
+                                })
                             })
                         })
                         .await
