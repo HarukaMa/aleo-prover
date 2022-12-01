@@ -19,7 +19,6 @@ use snarkos_node_messages::{
     Pong,
     PuzzleRequest,
     PuzzleResponse,
-    Status,
 };
 use snarkvm::prelude::{Block, FromBytes, Network, Testnet3};
 use tokio::{

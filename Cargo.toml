@@ -1,6 +1,6 @@
 [package]
 name = "aleo-prover"
-version = "0.4.5"
+version = "0.5.0"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
@@ -15,6 +15,7 @@ snarkvm-algorithms = { git = "https://github.com/harukama/snarkVM.git", branch =
 #snarkvm-algorithms = "0.9.6"
 #snarkos = { path = "../../src/snarkOS" }
 #snarkos-node-messages = { path = "../../src/snarkOS/node/messages" }
+snarkos-account = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
 snarkos-node-messages = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
 rand = "0.8.5"
 num_cpus = "1.14.0"
