@@ -26,7 +26,9 @@ struct Opt {
     #[clap(short = 'd', long = "debug")]
     debug: bool,
 
+    #[clap(verbatim_doc_comment)]
     /// Prover private key (APrivateKey1zkp...)
+    /// You should provide the private key from .env file instead: PRIVATE_KEY=APrivateKey1zkp...
     #[clap(short = 'p', long = "private-key")]
     private_key: Option<PrivateKey<Testnet3>>,
 
