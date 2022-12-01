@@ -32,6 +32,7 @@ byteorder = "1.4.3"
 ansi_term = "0.12.1"
 json-rpc-types = "1.0.3"
 hex = "0.4.3"
+dotenvy = "0.15.6"
 
 #[dependencies.aleo-stratum]
 #git = "https://github.com/HarukaMa/aleo-pool-server"
