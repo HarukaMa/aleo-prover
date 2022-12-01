@@ -7,7 +7,6 @@ mod prover;
 use std::{net::ToSocketAddrs, sync::Arc};
 
 use clap::Parser;
-use rand::seq::SliceRandom;
 use snarkvm::{
     console::account::address::Address,
     prelude::{PrivateKey, Testnet3, ViewKey},
@@ -27,9 +26,9 @@ struct Opt {
     #[clap(short = 'd', long = "debug")]
     debug: bool,
 
-    /// Prover address (aleo1...)
-    #[clap(short = 'a', long = "address")]
-    address: Option<Address<Testnet3>>,
+    /// Prover private key (APrivateKey1zkp...)
+    #[clap(short = 'p', long = "private-key")]
+    private_key: Option<PrivateKey<Testnet3>>,
 
     /// Beacon node address
     #[clap(short = 'b', long = "beacon")]
@@ -74,7 +73,7 @@ async fn main() {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
 
-    let mut opt = Opt::parse();
+    let opt = Opt::parse();
     if opt.new_address {
         let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
         let view_key = ViewKey::try_from(&private_key).unwrap();
@@ -111,8 +110,8 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
-    if opt.beacon.is_none() {
-        let bootstrap = [
+    let beacons = if opt.beacon.is_none() {
+        [
             "164.92.111.59:4133",
             "159.223.204.96:4133",
             "167.71.219.176:4133",
@@ -123,24 +122,26 @@ async fn main() {
             "207.154.215.49:4133",
             "46.101.114.158:4133",
             "138.197.190.94:4133",
-        ];
-        opt.beacon = bootstrap
-            .choose(&mut rand::thread_rng())
-            .cloned()
-            .unwrap()
-            .to_string()
-            .into();
-    }
-    if opt.address.is_none() {
-        error!("Prover address is required!");
+        ]
+        .map(|s| s.to_string())
+        .to_vec()
+    } else {
+        vec![opt.beacon.unwrap().to_string()]
+    };
+    if opt.private_key.is_none() {
+        error!("Prover private key is required!");
         std::process::exit(1);
     }
-    let address = opt.address.unwrap();
-    let beacon = opt.beacon.unwrap();
-    if let Err(e) = beacon.to_socket_addrs() {
-        error!("Invalid pool address {}: {}", beacon, e);
-        std::process::exit(1);
-    }
+    let private_key = opt.private_key.unwrap();
+    beacons
+        .iter()
+        .map(|s| {
+            if let Err(e) = s.to_socket_addrs() {
+                error!("Invalid beacon node address: {}", e);
+                std::process::exit(1);
+            }
+        })
+        .for_each(drop);
 
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
     let thread_pool_size = opt.thread_pool_size.unwrap_or(4);
@@ -171,7 +172,7 @@ async fn main() {
     //     debug!("Node initialized");
     // }
 
-    let client = DirectClient::init(address, beacon);
+    let client = DirectClient::init(private_key.try_into().unwrap(), beacons);
 
     let prover: Arc<Prover> = match Prover::init(threads, thread_pool_size, client.clone(), cuda, cuda_jobs).await {
         Ok(prover) => prover,
