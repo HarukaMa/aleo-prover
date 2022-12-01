@@ -7,21 +7,20 @@ use std::{
 };
 
 use futures_util::sink::SinkExt;
-use snarkos_node_executor::{NodeType, Status};
+use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
+use snarkos_account::Account;
 use snarkos_node_messages::{
     ChallengeRequest,
     ChallengeResponse,
     Data,
     MessageCodec,
+    NodeType,
     Ping,
     Pong,
     PuzzleRequest,
     PuzzleResponse,
 };
-use snarkvm::{
-    console::account::address::Address,
-    prelude::{Block, FromBytes, Network, Testnet3},
-};
+use snarkvm::prelude::{Block, FromBytes, Network, Testnet3};
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{
@@ -41,18 +40,18 @@ use crate::prover::ProverEvent;
 type Message = snarkos_node_messages::Message<Testnet3>;
 
 pub struct DirectClient {
-    pub address: Address<Testnet3>,
-    server: String,
+    pub account: Account<Testnet3>,
+    servers: Vec<String>,
     sender: Arc<Sender<Message>>,
     receiver: Arc<Mutex<Receiver<Message>>>,
 }
 
 impl DirectClient {
-    pub fn init(address: Address<Testnet3>, server: String) -> Arc<Self> {
+    pub fn init(account: Account<Testnet3>, servers: Vec<String>) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(1024);
         Arc::new(Self {
-            address,
-            server,
+            account,
+            servers,
             sender: Arc::new(sender),
             receiver: Arc::new(Mutex::new(receiver)),
         })
@@ -115,19 +114,23 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
         });
 
         debug!("Created coinbase puzzle request task");
+
+        let rng = &mut OsRng;
+
         loop {
             info!("Connecting to server...");
-            match timeout(Duration::from_secs(5), TcpStream::connect(&client.server)).await {
+            let server = client.servers.choose(rng).unwrap();
+            match timeout(Duration::from_secs(5), TcpStream::connect(server)).await {
                 Ok(socket) => match socket {
                     Ok(socket) => {
-                        info!("Connected to {}", client.server);
+                        info!("Connected to {}", server);
                         let mut framed = Framed::new(socket, MessageCodec::default());
                         let challenge_request = Message::ChallengeRequest(ChallengeRequest {
                             version: Message::VERSION,
-                            fork_depth: 4096,
-                            node_type: NodeType::Prover,
-                            status: Status::Ready,
                             listener_port: 4140,
+                            node_type: NodeType::Prover,
+                            address: client.account.address(),
+                            nonce: rng.gen(),
                         });
                         if let Err(e) = framed.send(challenge_request).await {
                             error!("Error sending challenge request: {}", e);
@@ -151,9 +154,10 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                         match message {
                                             Message::ChallengeRequest(ChallengeRequest {
                                                 version,
-                                                fork_depth: _,
+                                                listener_port: _,
                                                 node_type,
-                                                ..
+                                                address: _,
+                                                nonce,
                                             }) => {
                                                 if version < Message::VERSION {
                                                     error!("Peer is running an older version of the protocol");
@@ -166,7 +170,8 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     break;
                                                 }
                                                 let response = Message::ChallengeResponse(ChallengeResponse {
-                                                    header: Data::Object(genesis_header),
+                                                    genesis_header,
+                                                    signature: Data::Object(client.account.sign_bytes(&nonce.to_le_bytes(), rng).unwrap()),
                                                 });
                                                 if let Err(e) = framed.send(response).await {
                                                     error!("Error sending challenge response: {:?}", e);
@@ -175,23 +180,13 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 }
                                             }
                                             Message::ChallengeResponse(message) => {
-                                                // Perform the deferred non-blocking deserialization of the block header.
-                                                let block_header = match message.header.deserialize().await {
-                                                    Ok(block_header) => block_header,
-                                                    Err(error) => {
-                                                        error!("Error deserializing block header: {:?}", error);
-                                                        sleep(Duration::from_secs(5)).await;
-                                                        break;
-                                                    }
-                                                };
-                                                match block_header == genesis_header {
+                                                match message.genesis_header == genesis_header {
                                                     true => {
                                                         // Send the first `Ping` message to the peer.
                                                         let message = Message::Ping(Ping {
                                                             version: Message::VERSION,
-                                                            fork_depth: 4096,
                                                             node_type: NodeType::Prover,
-                                                            status: Status::Ready,
+                                                            block_locators: None,
                                                         });
                                                         if let Err(e) = framed.send(message).await {
                                                             error!("Error sending ping: {:?}", e);
@@ -221,22 +216,22 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 }
                                             }
                                             Message::PuzzleResponse(PuzzleResponse {
-                                                epoch_challenge, block
+                                                epoch_challenge, block_header
                                             }) => {
-                                                let block = match block.deserialize().await {
-                                                    Ok(block) => block,
+                                                let block_header = match block_header.deserialize().await {
+                                                    Ok(block_header) => block_header,
                                                     Err(error) => {
-                                                        error!("Error deserializing block: {:?}", error);
+                                                        error!("Error deserializing block header: {:?}", error);
                                                         sleep(Duration::from_secs(5)).await;
                                                         break;
                                                     }
                                                 };
-                                                if let Err(e) = prover_sender.send(ProverEvent::NewTarget(block.proof_target())).await {
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewTarget(block_header.proof_target())).await {
                                                     error!("Error sending new target to prover: {}", e);
                                                 } else {
                                                     debug!("Sent new target to prover");
                                                 }
-                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.address)).await {
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.account.address())).await {
                                                     error!("Error sending new work to prover: {}", e);
                                                 } else {
                                                     debug!("Sent new work to prover");
