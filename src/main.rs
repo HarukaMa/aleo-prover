@@ -4,7 +4,7 @@ extern crate core;
 mod client_direct;
 mod prover;
 
-use std::{net::ToSocketAddrs, sync::Arc};
+use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use clap::Parser;
 use snarkvm::{
@@ -72,7 +72,7 @@ struct Opt {
 async fn main() {
     #[cfg(windows)]
     let _ = ansi_term::enable_ansi_support();
-
+    dotenvy::dotenv().ok();
     let opt = Opt::parse();
     if opt.new_address {
         let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
@@ -126,13 +126,24 @@ async fn main() {
         .map(|s| s.to_string())
         .to_vec()
     } else {
-        vec![opt.beacon.unwrap().to_string()]
+        vec![opt.beacon.unwrap()]
     };
-    if opt.private_key.is_none() {
-        error!("Prover private key is required!");
-        std::process::exit(1);
-    }
-    let private_key = opt.private_key.unwrap();
+    let private_key = match opt.private_key {
+        Some(private_key) => private_key,
+        None => match dotenvy::var("PRIVATE_KEY") {
+            Ok(private_key) => match PrivateKey::from_str(&private_key) {
+                Ok(private_key) => private_key,
+                Err(e) => {
+                    error!("Invalid private key: {}", e);
+                    return;
+                }
+            },
+            Err(_) => {
+                error!("Private key is required");
+                std::process::exit(1);
+            }
+        },
+    };
     beacons
         .iter()
         .map(|s| {
