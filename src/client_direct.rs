@@ -220,9 +220,12 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 }
                                             }
                                             Message::Pong(_) => {
+                                                let was_connected = connected.load(Ordering::SeqCst);
                                                 connected.store(true, Ordering::SeqCst);
-                                                if let Err(e) = client.sender().send(Message::PuzzleRequest(PuzzleRequest {})).await {
-                                                    error!("Failed to send puzzle request: {}", e);
+                                                if !was_connected {
+                                                    if let Err(e) = sender.send(SnarkOSMessage::PuzzleRequest(PuzzleRequest {})).await {
+                                                        error!("Failed to send puzzle request: {}", e);
+                                                    }
                                                 }
                                             }
                                             Message::PuzzleResponse(PuzzleResponse {
