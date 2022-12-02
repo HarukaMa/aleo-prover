@@ -223,7 +223,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 let was_connected = connected.load(Ordering::SeqCst);
                                                 connected.store(true, Ordering::SeqCst);
                                                 if !was_connected {
-                                                    if let Err(e) = sender.send(SnarkOSMessage::PuzzleRequest(PuzzleRequest {})).await {
+                                                    if let Err(e) = framed.send(Message::PuzzleRequest(PuzzleRequest {})).await {
                                                         error!("Failed to send puzzle request: {}", e);
                                                     }
                                                 }
