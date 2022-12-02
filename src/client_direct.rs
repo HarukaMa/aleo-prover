@@ -208,6 +208,16 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 } else {
                                                     debug!("Sent pong");
                                                 }
+                                                let message = Message::Ping(Ping {
+                                                    version: Message::VERSION,
+                                                    node_type: NodeType::Prover,
+                                                    block_locators: None,
+                                                });
+                                                if let Err(e) = framed.send(message).await {
+                                                    error!("Error sending ping: {:?}", e);
+                                                } else {
+                                                    debug!("Sent ping");
+                                                }
                                             }
                                             Message::Pong(_) => {
                                                 connected.store(true, Ordering::SeqCst);
