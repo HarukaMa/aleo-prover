@@ -87,22 +87,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
             }
         });
 
-        // incoming socket
-        task::spawn(async move {
-            loop {
-                match listener.accept().await {
-                    Ok((stream, peer_addr)) => {
-                        info!("New connection from: {}", peer_addr);
-                        // snarkOS is not checking anything so we just hang up
-                        drop(stream);
-                    }
-                    Err(e) => {
-                        error!("Error accepting connection: {:?}", e);
-                    }
-                }
-            }
-        });
-
         debug!("Created coinbase puzzle request task");
 
         let rng = &mut OsRng;
