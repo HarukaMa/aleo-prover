@@ -89,16 +89,6 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
 
         // incoming socket
         task::spawn(async move {
-            let (_, listener) = match TcpListener::bind("0.0.0.0:4140").await {
-                Ok(listener) => {
-                    let local_ip = listener.local_addr().expect("Could not get local ip");
-                    info!("Listening on {}", local_ip);
-                    (local_ip, listener)
-                }
-                Err(e) => {
-                    panic!("Unable to listen on port 4140: {:?}", e);
-                }
-            };
             loop {
                 match listener.accept().await {
                     Ok((stream, peer_addr)) => {
