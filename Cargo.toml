@@ -1,10 +1,15 @@
 [package]
 name = "aleo-prover"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+# for appimage
+[[bin]]
+name = "aleo-prover"
+path = "src/main.rs"
 
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
@@ -73,3 +78,11 @@ debug = 1
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[package.metadata.appimage]
+auto_link = true
+auto_link_exclude_list = [
+    "libc.so*",
+    "libdl.so*",
+    "libpthread.so*",
+]
