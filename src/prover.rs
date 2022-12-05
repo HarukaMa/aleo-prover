@@ -246,7 +246,7 @@ impl Prover {
 
     async fn new_work(&self, epoch_number: u32, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
         let last_epoch_number = self.current_epoch.load(Ordering::SeqCst);
-        if epoch_number <= last_epoch_number {
+        if epoch_number <= last_epoch_number && epoch_number != 0 {
             return;
         }
         self.current_epoch.store(epoch_number, Ordering::SeqCst);
