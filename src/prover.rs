@@ -283,16 +283,12 @@ impl Prover {
                         let nonce = thread_rng().next_u64();
                         if let Ok(Ok(solution)) = task::spawn_blocking(move || {
                             tp.install(|| {
-                                Runtime::new().unwrap().handle().block_on(async {
-                                    coinbase_puzzle
-                                        .prove(
-                                            &epoch_challenge,
-                                            address,
-                                            nonce,
-                                            Option::from(current_proof_target.load(Ordering::SeqCst)),
-                                        )
-                                        .await
-                                })
+                                coinbase_puzzle.prove(
+                                    &epoch_challenge,
+                                    address,
+                                    nonce,
+                                    Option::from(current_proof_target.load(Ordering::SeqCst)),
+                                )
                             })
                         })
                         .await

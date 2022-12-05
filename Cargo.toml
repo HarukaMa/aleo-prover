@@ -14,14 +14,14 @@ path = "src/main.rs"
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
-snarkvm = { git = "https://github.com/harukama/snarkVM.git", branch = "feat/snarkvm-cuda-tokio" }
-snarkvm-algorithms = { git = "https://github.com/harukama/snarkVM.git", branch = "feat/snarkvm-cuda-tokio" }
+snarkvm = { git = "https://github.com/aleohq/snarkVM.git", rev = "dafd8cc" }
+snarkvm-algorithms = { git = "https://github.com/aleohq/snarkVM.git", rev = "dafd8cc" }
 #snarkvm = "0.9.6"
 #snarkvm-algorithms = "0.9.6"
 #snarkos = { path = "../../src/snarkOS" }
 #snarkos-node-messages = { path = "../../src/snarkOS/node/messages" }
-snarkos-account = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
-snarkos-node-messages = { git = "https://github.com/harukama/snarkOS.git", branch = "testnet3-cuda" }
+snarkos-account = { git = "https://github.com/aleohq/snarkOS.git", branch = "feat/initial-gpu-prover" }
+snarkos-node-messages = { git = "https://github.com/aleohq/snarkOS.git", branch = "feat/initial-gpu-prover" }
 rand = "0.8.5"
 num_cpus = "1.14.0"
 rayon = "1.6.0"
