@@ -6,6 +6,11 @@ license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+# for appimage
+[[bin]]
+name = "aleo-prover"
+path = "src/main.rs"
+
 [dependencies]
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
