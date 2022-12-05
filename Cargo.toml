@@ -72,3 +72,11 @@ debug = 1
 lto = true
 codegen-units = 1
 panic = "abort"
+
+[package.metadata.appimage]
+auto_link = true
+auto_link_exclude_list = [
+    "libc.so*",
+    "libdl.so*",
+    "libpthread.so*",
+]
