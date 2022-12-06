@@ -17,8 +17,8 @@ path = "src/main.rs"
 #snarkos = { path = "../../src/snarkOS" }
 #snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
 #snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-snarkvm = "0.9.7"
-snarkvm-algorithms = "0.9.7"
+snarkvm = "0.9.10"
+snarkvm-algorithms = "0.9.10"
 snarkos-account = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 snarkos-node-messages = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
 rand = "0.8.5"
