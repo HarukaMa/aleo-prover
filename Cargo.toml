@@ -1,22 +1,11 @@
+```toml
 [package]
 name = "aleo-prover"
 version = "0.5.1"
 edition = "2021"
 license = "GPL-3.0-or-later"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
-# for appimage
-[[bin]]
-name = "aleo-prover"
-path = "src/main.rs"
-
 [dependencies]
-#snarkvm = { path = "../../src/snarkVM" }
-#snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
-#snarkos = { path = "../../src/snarkOS" }
-#snarkvm = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
-#snarkvm-algorithms = { git = "https://github.com/AleoHQ/snarkVM.git", branch = "testnet3" }
 snarkvm = "0.9.10"
 snarkvm-algorithms = "0.9.10"
 snarkos-account = { git = "https://github.com/AleoHQ/snarkOS.git", branch = "testnet3" }
@@ -38,11 +27,6 @@ ansi_term = "0.12.1"
 json-rpc-types = "1.0.3"
 hex = "0.4.3"
 dotenvy = "0.15.6"
-
-#[dependencies.aleo-stratum]
-#git = "https://github.com/HarukaMa/aleo-pool-server"
-#branch = "testnet3-dummy"
-#path = "../aleo-operator/stratum"
 
 [dependencies.clap]
 version = "4.0.10"
@@ -66,7 +50,6 @@ version = "1.0.82"
 features = ["preserve_order"]
 
 [features]
-#cuda = ["snarkvm/cuda"]
 
 [profile.dev]
 opt-level = 1
@@ -79,10 +62,14 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
+[[bin]]
+name = "aleo-prover"
+path = "src/main.rs"
+
 [package.metadata.appimage]
 auto_link = true
 auto_link_exclude_list = [
     "libc.so*",
     "libdl.so*",
-    "libpthread.so*",
-]
+    "lib
+```
