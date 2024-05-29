@@ -246,7 +246,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                     None => {
                                         error!("Disconnected from beacon");
                                         connected.store(false, Ordering::SeqCst);
-                                        while receiver.recv().await.is_some() {}
+                                        while let Ok(_) = receiver.try_recv() {}
                                         sleep(Duration::from_secs(5)).await;
                                         break;
                                     }
