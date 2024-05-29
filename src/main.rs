@@ -8,8 +8,8 @@ use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use clap::Parser;
 use snarkvm::{
-    console::account::address::Address,
-    prelude::{PrivateKey, Testnet3, ViewKey},
+    console::account::Address,
+    prelude::{PrivateKey, TestnetV0, ViewKey},
 };
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
@@ -18,6 +18,8 @@ use crate::{
     client_direct::{start, DirectClient},
     prover::Prover,
 };
+
+type N = TestnetV0;
 
 #[derive(Debug, Parser)]
 #[clap(name = "prover", about = "Standalone prover.")]
@@ -30,7 +32,7 @@ struct Opt {
     /// Prover private key (APrivateKey1zkp...)
     /// You should provide the private key from .env file instead: PRIVATE_KEY=APrivateKey1zkp...
     #[clap(short = 'p', long = "private-key")]
-    private_key: Option<PrivateKey<Testnet3>>,
+    private_key: Option<PrivateKey<N>>,
 
     /// Beacon node address
     #[clap(short = 'b', long = "beacon")]
@@ -77,7 +79,7 @@ async fn main() {
     dotenvy::dotenv().ok();
     let opt = Opt::parse();
     if opt.new_address {
-        let private_key = PrivateKey::<Testnet3>::new(&mut rand::thread_rng()).unwrap();
+        let private_key = PrivateKey::<N>::new(&mut rand::thread_rng()).unwrap();
         let view_key = ViewKey::try_from(&private_key).unwrap();
         let address = Address::try_from(&view_key).unwrap();
         println!();

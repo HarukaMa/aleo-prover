@@ -6,24 +6,30 @@ use std::{
     },
     time::Duration,
 };
+use std::f32::consts::E;
 
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::Result;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use snarkos_node_messages::{Data, UnconfirmedSolution};
+use snarkos_node_router_messages::UnconfirmedSolution;
 use snarkvm::{
-    console::account::address::Address,
-    prelude::{CoinbasePuzzle, Testnet3, ToBytes},
-    synthesizer::{EpochChallenge, PuzzleConfig, UniversalSRS},
+    console::account::Address,
+    prelude::ToBytes,
 };
-use snarkvm_algorithms::crypto_hash::sha256d_to_u64;
+use snarkvm::ledger::Header;
+use snarkvm::prelude::{Network, TestnetV0};
+use snarkvm_ledger_narwhal_data::Data;
+use snarkvm_ledger_puzzle::Puzzle;
+use snarkvm_ledger_puzzle_epoch::MerklePuzzle;
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
 
-type Message = snarkos_node_messages::Message<Testnet3>;
+type N = TestnetV0;
+
+type Message = snarkos_node_router_messages::Message<N>;
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
@@ -36,13 +42,13 @@ pub struct Prover {
     valid_shares: Arc<AtomicU32>,
     invalid_shares: Arc<AtomicU32>,
     current_proof_target: Arc<AtomicU64>,
-    coinbase_puzzle: CoinbasePuzzle<Testnet3>,
+    puzzle: Puzzle<N>,
 }
 
 #[allow(clippy::large_enum_variant)]
 pub enum ProverEvent {
     NewTarget(u64),
-    NewWork(u32, EpochChallenge<Testnet3>, Address<Testnet3>),
+    NewWork(u32, <N as Network>::BlockHash, Address<N>),
     _Result(bool, Option<String>),
 }
 
@@ -89,15 +95,6 @@ impl Prover {
 
         let (sender, mut receiver) = mpsc::channel(1024);
 
-        info!("Initializing universal SRS");
-        let srs = UniversalSRS::<Testnet3>::load().expect("Failed to load SRS");
-        info!("Universal SRS initialized");
-
-        info!("Initializing coinbase proving key");
-        let coinbase_puzzle = CoinbasePuzzle::<Testnet3>::trim(&srs, PuzzleConfig { degree: (1 << 13) - 1 })
-            .expect("Failed to load coinbase proving key");
-        info!("Coinbase proving key initialized");
-
         let prover = Arc::new(Self {
             thread_pools: Arc::new(thread_pools),
             cuda,
@@ -109,7 +106,7 @@ impl Prover {
             valid_shares: Default::default(),
             invalid_shares: Default::default(),
             current_proof_target: Default::default(),
-            coinbase_puzzle,
+            puzzle: Puzzle::<N>::new::<MerklePuzzle<N>>(),
         });
 
         let p = prover.clone();
@@ -119,8 +116,8 @@ impl Prover {
                     ProverEvent::NewTarget(target) => {
                         p.new_target(target);
                     }
-                    ProverEvent::NewWork(epoch_number, epoch_challenge, address) => {
-                        p.new_work(epoch_number, epoch_challenge, address).await;
+                    ProverEvent::NewWork(epoch_number, epoch_hash, address) => {
+                        p.new_work(epoch_number, epoch_hash, address).await;
                     }
                     ProverEvent::_Result(success, error) => {
                         p.result(success, error).await;
@@ -236,7 +233,7 @@ impl Prover {
         info!("New proof target: {}", proof_target);
     }
 
-    async fn new_work(&self, epoch_number: u32, epoch_challenge: EpochChallenge<Testnet3>, address: Address<Testnet3>) {
+    async fn new_work(&self, epoch_number: u32, epoch_hash: <N as Network>::BlockHash, address: Address<N>) {
         let last_epoch_number = self.current_epoch.load(Ordering::SeqCst);
         if epoch_number <= last_epoch_number {
             return;
@@ -250,7 +247,7 @@ impl Prover {
         let thread_pools = self.thread_pools.clone();
         let total_proofs = self.total_proofs.clone();
         let cuda = self.cuda.clone();
-        let coinbase_puzzle = self.coinbase_puzzle.clone();
+        let puzzle = self.puzzle.clone();
 
         task::spawn(async move {
             let _ = task::spawn(async move {
@@ -262,18 +259,18 @@ impl Prover {
                     let current_proof_target = current_proof_target.clone();
                     let current_epoch = current_epoch.clone();
                     let client = client.clone();
-                    let epoch_challenge = epoch_challenge.clone();
+                    let epoch_hash = epoch_hash.clone();
                     let address = address.clone();
-                    let total_proofs = total_proofs.clone();
+                    let total_solutions = total_proofs.clone();
                     let tp = tp.clone();
-                    let coinbase_puzzle = coinbase_puzzle.clone();
+                    let puzzle = puzzle.clone();
                     joins.push(task::spawn(async move {
                         loop {
                             let current_proof_target = current_proof_target.clone();
-                            let epoch_challenge = epoch_challenge.clone();
+                            let epoch_hash = epoch_hash.clone();
                             let address = address.clone();
                             let tp = tp.clone();
-                            let coinbase_puzzle = coinbase_puzzle.clone();
+                            let puzzle = puzzle.clone();
                             if epoch_number != current_epoch.load(Ordering::SeqCst) {
                                 debug!(
                                     "Terminating stale work: current {} latest {}",
@@ -282,13 +279,14 @@ impl Prover {
                                 );
                                 break;
                             }
-                            let nonce = thread_rng().next_u64();
+                            let counter = thread_rng().next_u64();
+                            let prove_puzzle = puzzle.clone();
                             if let Ok(Ok(solution)) = task::spawn_blocking(move || {
                                 tp.install(|| {
-                                    coinbase_puzzle.prove(
-                                        &epoch_challenge,
+                                    prove_puzzle.prove(
+                                        epoch_hash,
                                         address,
-                                        nonce,
+                                        counter,
                                         Option::from(current_proof_target.load(Ordering::SeqCst)),
                                     )
                                 })
@@ -304,8 +302,12 @@ impl Prover {
                                     break;
                                 }
                                 // Ensure the share difficulty target is met.
-                                let proof_difficulty =
-                                    u64::MAX / sha256d_to_u64(&*solution.commitment().to_bytes_le().unwrap());
+                                let proof_difficulty = puzzle.get_proof_target(&solution);
+                                if proof_difficulty.is_err() {
+                                    error!("Failed to get proof target: {}", proof_difficulty.err().unwrap());
+                                    continue;
+                                }
+                                let proof_difficulty = proof_difficulty.unwrap();
 
                                 info!(
                                     "Solution found for epoch {} with difficulty {}",
@@ -314,15 +316,15 @@ impl Prover {
 
                                 // Send a `PoolResponse` to the operator.
                                 let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                                    puzzle_commitment: solution.commitment(),
+                                    solution_id: solution.id(),
                                     solution: Data::Object(solution),
                                 });
                                 if let Err(error) = client.sender().send(message).await {
                                     error!("Failed to send PoolResponse: {}", error);
                                 }
-                                total_proofs.fetch_add(1, Ordering::SeqCst);
+                                total_solutions.fetch_add(1, Ordering::SeqCst);
                             } else {
-                                total_proofs.fetch_add(1, Ordering::SeqCst);
+                                total_solutions.fetch_add(1, Ordering::SeqCst);
                             }
                         }
                     }));

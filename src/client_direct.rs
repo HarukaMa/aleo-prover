@@ -9,10 +9,9 @@ use std::{
 use futures_util::sink::SinkExt;
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
 use snarkos_account::Account;
-use snarkos_node_messages::{
+use snarkos_node_router_messages::{
     ChallengeRequest,
     ChallengeResponse,
-    Data,
     MessageCodec,
     NodeType,
     Ping,
@@ -20,7 +19,8 @@ use snarkos_node_messages::{
     PuzzleRequest,
     PuzzleResponse,
 };
-use snarkvm::prelude::{Block, FromBytes, Network, Testnet3};
+use snarkvm::prelude::{Block, FromBytes, Network, TestnetV0};
+use snarkvm_ledger_narwhal_data::Data;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{
@@ -37,17 +37,19 @@ use tracing::{debug, error, info, warn};
 
 use crate::prover::ProverEvent;
 
-type Message = snarkos_node_messages::Message<Testnet3>;
+type N = TestnetV0;
+
+type Message = snarkos_node_router_messages::Message<N>;
 
 pub struct DirectClient {
-    pub account: Account<Testnet3>,
+    pub account: Account<N>,
     servers: Vec<String>,
     sender: Arc<Sender<Message>>,
     receiver: Arc<Mutex<Receiver<Message>>>,
 }
 
 impl DirectClient {
-    pub fn init(account: Account<Testnet3>, servers: Vec<String>) -> Arc<Self> {
+    pub fn init(account: Account<N>, servers: Vec<String>) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(1024);
         Arc::new(Self {
             account,
@@ -69,7 +71,7 @@ impl DirectClient {
 pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>) {
     task::spawn(async move {
         let receiver = client.receiver();
-        let genesis_header = *Block::<Testnet3>::from_bytes_le(Testnet3::genesis_bytes())
+        let genesis_header = *Block::<N>::from_bytes_le(N::genesis_bytes())
             .unwrap()
             .header();
         let connected = Arc::new(AtomicBool::new(false));
@@ -78,36 +80,10 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
         let connected_req = connected.clone();
         task::spawn(async move {
             loop {
-                sleep(Duration::from_secs(Testnet3::ANCHOR_TIME as u64)).await;
+                sleep(Duration::from_secs(N::BLOCK_TIME as u64)).await;
                 if connected_req.load(Ordering::SeqCst) {
                     if let Err(e) = client_sender.send(Message::PuzzleRequest(PuzzleRequest {})).await {
                         error!("Failed to send puzzle request: {}", e);
-                    }
-                }
-            }
-        });
-
-        // incoming socket
-        task::spawn(async move {
-            let (_, listener) = match TcpListener::bind("0.0.0.0:4140").await {
-                Ok(listener) => {
-                    let local_ip = listener.local_addr().expect("Could not get local ip");
-                    info!("Listening on {}", local_ip);
-                    (local_ip, listener)
-                }
-                Err(e) => {
-                    panic!("Unable to listen on port 4140: {:?}", e);
-                }
-            };
-            loop {
-                match listener.accept().await {
-                    Ok((stream, peer_addr)) => {
-                        info!("New connection from: {}", peer_addr);
-                        // snarkOS is not checking anything so we just hang up
-                        drop(stream);
-                    }
-                    Err(e) => {
-                        error!("Error accepting connection: {:?}", e);
                     }
                 }
             }
@@ -164,35 +140,39 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                     sleep(Duration::from_secs(5)).await;
                                                     break;
                                                 }
-                                                if node_type != NodeType::Beacon && node_type != NodeType::Validator {
-                                                    error!("Peer is not a beacon or validator");
+                                                if node_type != NodeType::Client && node_type != NodeType::Validator {
+                                                    error!("Peer is not a client or validator");
                                                     sleep(Duration::from_secs(5)).await;
                                                     break;
                                                 }
+                                                let resp_nonce: u64 = rng.gen();
                                                 let response = Message::ChallengeResponse(ChallengeResponse {
                                                     genesis_header,
-                                                    signature: Data::Object(client.account.sign_bytes(&nonce.to_le_bytes(), rng).unwrap()),
+                                                    signature: Data::Object(client.account.sign_bytes(&[nonce.to_le_bytes(), resp_nonce.to_le_bytes()].concat(), rng).unwrap()),
+                                                    nonce: resp_nonce,
                                                 });
                                                 if let Err(e) = framed.send(response).await {
                                                     error!("Error sending challenge response: {:?}", e);
                                                 } else {
                                                     debug!("Sent challenge response");
                                                 }
+
+                                                // Send the first `Ping` message to the peer.
+                                                let message = Message::Ping(Ping {
+                                                    version: Message::VERSION,
+                                                    node_type: NodeType::Prover,
+                                                    block_locators: None,
+                                                });
+                                                if let Err(e) = framed.send(message).await {
+                                                    error!("Error sending ping: {:?}", e);
+                                                } else {
+                                                    debug!("Sent ping");
+                                                }
                                             }
                                             Message::ChallengeResponse(message) => {
                                                 match message.genesis_header == genesis_header {
                                                     true => {
-                                                        // Send the first `Ping` message to the peer.
-                                                        let message = Message::Ping(Ping {
-                                                            version: Message::VERSION,
-                                                            node_type: NodeType::Prover,
-                                                            block_locators: None,
-                                                        });
-                                                        if let Err(e) = framed.send(message).await {
-                                                            error!("Error sending ping: {:?}", e);
-                                                        } else {
-                                                            debug!("Sent ping");
-                                                        }
+                                                        info!("Peer has the same genesis block");
                                                     }
                                                     false => {
                                                         error!("Peer has a different genesis block");
@@ -229,7 +209,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 }
                                             }
                                             Message::PuzzleResponse(PuzzleResponse {
-                                                epoch_challenge, block_header
+                                                epoch_hash, block_header
                                             }) => {
                                                 let block_header = match block_header.deserialize().await {
                                                     Ok(block_header) => block_header,
@@ -244,7 +224,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 } else {
                                                     debug!("Sent new target to prover");
                                                 }
-                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch_challenge.epoch_number(), epoch_challenge, client.account.address())).await {
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(block_header.metadata().height() / N::NUM_BLOCKS_PER_EPOCH, epoch_hash, client.account.address())).await {
                                                     error!("Error sending new work to prover: {}", e);
                                                 } else {
                                                     debug!("Sent new work to prover");
@@ -266,6 +246,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                     None => {
                                         error!("Disconnected from beacon");
                                         connected.store(false, Ordering::SeqCst);
+                                        while receiver.recv().await.is_some() {}
                                         sleep(Duration::from_secs(5)).await;
                                         break;
                                     }
