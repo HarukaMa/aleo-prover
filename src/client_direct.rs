@@ -80,7 +80,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
         let connected_req = connected.clone();
         task::spawn(async move {
             loop {
-                sleep(Duration::from_secs(N::BLOCK_TIME as u64)).await;
+                sleep(Duration::from_secs(N::ANCHOR_TIME as u64)).await;
                 if connected_req.load(Ordering::SeqCst) {
                     if let Err(e) = client_sender.send(Message::PuzzleRequest(PuzzleRequest {})).await {
                         error!("Failed to send puzzle request: {}", e);
