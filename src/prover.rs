@@ -9,7 +9,7 @@ use std::{
 use std::f32::consts::E;
 
 use ansi_term::Colour::{Cyan, Green, Red};
-use anyhow::Result;
+use anyhow::{anyhow, bail, Result};
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkos_node_router_messages::UnconfirmedSolution;
@@ -20,7 +20,7 @@ use snarkvm::{
 use snarkvm::ledger::Header;
 use snarkvm::prelude::{Network, TestnetV0};
 use snarkvm_ledger_narwhal_data::Data;
-use snarkvm_ledger_puzzle::Puzzle;
+use snarkvm_ledger_puzzle::{Puzzle, Solution};
 use snarkvm_ledger_puzzle_epoch::MerklePuzzle;
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
@@ -233,6 +233,28 @@ impl Prover {
         info!("New proof target: {}", proof_target);
     }
 
+    /// Returns a solution to the puzzle.
+    fn prove(
+        puzzle: &Puzzle<N>,
+        epoch_hash: <N as Network>::BlockHash,
+        address: Address<N>,
+        counter: u64,
+        minimum_proof_target: Option<u64>,
+    ) -> Result<(Solution<N>, u64)> {
+        // Construct the solution.
+        let solution = Solution::new(epoch_hash, address, counter)?;
+        // Compute the proof target.
+        let proof_target = puzzle.get_proof_target(&solution)?;
+        // Check that the minimum proof target is met.
+        if let Some(minimum_proof_target) = minimum_proof_target {
+            if proof_target < minimum_proof_target {
+                bail!("Solution was below the minimum proof target ({proof_target} < {minimum_proof_target})")
+            }
+        }
+        // Return the solution.
+        Ok((solution, proof_target))
+    }
+
     async fn new_work(&self, epoch_number: u32, epoch_hash: <N as Network>::BlockHash, address: Address<N>) {
         let last_epoch_number = self.current_epoch.load(Ordering::SeqCst);
         if epoch_number <= last_epoch_number {
@@ -279,16 +301,18 @@ impl Prover {
                                 );
                                 break;
                             }
-                            let counter = thread_rng().next_u64();
-                            let prove_puzzle = puzzle.clone();
-                            if let Ok(Ok(solution)) = task::spawn_blocking(move || {
+                            if let Ok(Ok((solution, proof_difficulty))) = task::spawn_blocking(move || {
                                 tp.install(|| {
-                                    prove_puzzle.prove(
-                                        epoch_hash,
-                                        address,
-                                        counter,
-                                        Option::from(current_proof_target.load(Ordering::SeqCst)),
-                                    )
+                                    loop {
+                                        let counter = thread_rng().next_u64();
+                                        return Prover::prove(
+                                            &puzzle,
+                                            epoch_hash,
+                                            address,
+                                            counter,
+                                            Option::from(current_proof_target.load(Ordering::SeqCst)),
+                                        )
+                                    }
                                 })
                             })
                             .await
@@ -301,13 +325,6 @@ impl Prover {
                                     );
                                     break;
                                 }
-                                // Ensure the share difficulty target is met.
-                                let proof_difficulty = puzzle.get_proof_target(&solution);
-                                if proof_difficulty.is_err() {
-                                    error!("Failed to get proof target: {}", proof_difficulty.err().unwrap());
-                                    continue;
-                                }
-                                let proof_difficulty = proof_difficulty.unwrap();
 
                                 info!(
                                     "Solution found for epoch {} with difficulty {}",
