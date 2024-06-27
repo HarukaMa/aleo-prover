@@ -5,6 +5,7 @@ use std::{
     },
     time::Duration,
 };
+use std::str::FromStr;
 
 use futures_util::sink::SinkExt;
 use rand::{prelude::SliceRandom, rngs::OsRng, Rng};
@@ -19,8 +20,11 @@ use snarkos_node_router_messages::{
     PuzzleRequest,
     PuzzleResponse,
 };
-use snarkvm::prelude::{Block, FromBytes, Network, TestnetV0};
-use snarkvm_ledger_narwhal_data::Data;
+use snarkvm::console::types::Field;
+use snarkvm::ledger::Block;
+use snarkvm::ledger::narwhal::Data;
+use snarkvm::prelude::{Network, TestnetV0};
+use snarkvm::utilities::FromBytes;
 use tokio::{
     net::{TcpListener, TcpStream},
     sync::{
@@ -148,6 +152,7 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<DirectClient>)
                                                 let resp_nonce: u64 = rng.gen();
                                                 let response = Message::ChallengeResponse(ChallengeResponse {
                                                     genesis_header,
+                                                    restrictions_id: Field::<N>::from_str("0field").unwrap(),
                                                     signature: Data::Object(client.account.sign_bytes(&[nonce.to_le_bytes(), resp_nonce.to_le_bytes()].concat(), rng).unwrap()),
                                                     nonce: resp_nonce,
                                                 });

@@ -15,15 +15,14 @@ path = "src/main.rs"
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
 #snarkos = { path = "../../src/snarkOS" }
-snarkvm = { git = "https://github.com/AleoNet/snarkVM", rev = "fddd8b9" }
-snarkvm-algorithms = { git = "https://github.com/AleoNet/snarkVM", rev = "fddd8b9" }
-snarkvm-ledger-puzzle = { git = "https://github.com/AleoNet/snarkVM", rev = "fddd8b9" }
-snarkvm-ledger-puzzle-epoch = { git = "https://github.com/AleoNet/snarkVM", rev = "fddd8b9" }
-snarkvm-ledger-narwhal-data = { git = "https://github.com/AleoNet/snarkVM", rev = "fddd8b9" }
-#snarkvm = "0.9.10"
-#snarkvm-algorithms = "0.9.10"
-snarkos-account = { git = "https://github.com/AleoNet/snarkOS", rev = "85bd2b3" }
-snarkos-node-router-messages = { git = "https://github.com/AleoNet/snarkOS", rev = "85bd2b3" }
+snarkvm = { git = "https://github.com/AleoNet/snarkVM.git", rev = "d170a9f"}
+snarkvm-ledger-puzzle-epoch = { git = "https://github.com/AleoNet/snarkVM.git", rev = "d170a9f"}
+
+snarkos-account = { git = "https://github.com/AleoNet/snarkOS", rev = "878624d6" }
+snarkos-node-router-messages = { git = "https://github.com/AleoNet/snarkOS", rev = "878624d6" }
+
+#snarkos-account = { path = "../snarkOS/account" }
+#snarkos-node-router-messages = { path = "../snarkOS/node/router/messages" }
 
 rand = "0.8.5"
 num_cpus = "1.16.0"

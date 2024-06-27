@@ -7,10 +7,7 @@ mod prover;
 use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use clap::Parser;
-use snarkvm::{
-    console::account::Address,
-    prelude::{PrivateKey, TestnetV0, ViewKey},
-};
+use snarkvm::prelude::{Address, PrivateKey, TestnetV0, ViewKey};
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
