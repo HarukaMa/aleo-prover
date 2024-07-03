@@ -10,6 +10,7 @@ use std::{
 
 use ansi_term::Colour::{Cyan, Green, Red};
 use anyhow::{anyhow, bail, Result};
+use futures::executor::block_on;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkos_node_router_messages::UnconfirmedSolution;
@@ -277,7 +278,7 @@ impl Prover {
             let address = address.clone();
             let total_solutions = total_proofs.clone();
             let puzzle = puzzle.clone();
-            task::spawn(async move {
+            thread::spawn(move || {
                 loop {
                     let current_proof_target = current_proof_target.clone();
                     let epoch_hash = epoch_hash.clone();
@@ -292,31 +293,25 @@ impl Prover {
                         );
                         break;
                     }
-                    if let Ok(Ok(Ok((solution, proof_difficulty)))) = task::spawn_blocking(move || {
-                        thread::spawn(move || loop {
-                            core_affinity::set_for_current(core_affinity::CoreId { id: i });
-                            debug!(
-                                "Proving epoch {} with difficulty {}",
-                                epoch_number,
-                                current_proof_target.load(Ordering::SeqCst)
-                            );
-                            let counter = thread_rng().next_u64();
-                            let res = Prover::prove(
-                                &puzzle,
-                                epoch_hash,
-                                address,
-                                counter,
-                                Option::from(current_proof_target.load(Ordering::SeqCst)),
-                            );
-                            if res.is_ok() {
-                                return res;
-                            }
-                            total_solutions_.fetch_add(1, Ordering::SeqCst);
-                        })
-                        .join()
-                    })
-                    .await
-                    {
+                    if let (solution, proof_difficulty) = loop {
+                        debug!(
+                            "Proving epoch {} with difficulty {}",
+                            epoch_number,
+                            current_proof_target.load(Ordering::SeqCst)
+                        );
+                        let counter = thread_rng().next_u64();
+                        let res = Prover::prove(
+                            &puzzle,
+                            epoch_hash,
+                            address,
+                            counter,
+                            Option::from(current_proof_target.load(Ordering::SeqCst)),
+                        );
+                        if res.is_ok() {
+                            break res.unwrap()
+                        }
+                        total_solutions_.fetch_add(1, Ordering::SeqCst);
+                    } {
                         if epoch_number != current_epoch.load(Ordering::SeqCst) {
                             debug!(
                                 "Terminating stale work: current {} latest {}",
@@ -336,7 +331,7 @@ impl Prover {
                             solution_id: solution.id(),
                             solution: Data::Object(solution),
                         });
-                        if let Err(error) = client.sender().send(message).await {
+                        if let Err(error) = block_on(client.sender().send(message)) {
                             error!("Failed to send PoolResponse: {}", error);
                         }
                         total_solutions.fetch_add(1, Ordering::SeqCst);
