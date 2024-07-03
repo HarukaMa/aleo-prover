@@ -14,13 +14,16 @@ use futures::executor::block_on;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkos_node_router_messages::UnconfirmedSolution;
-use snarkvm::circuit::AleoTestnetV0;
-use snarkvm::ledger::narwhal::Data;
-use snarkvm::ledger::puzzle::{PartialSolution, Puzzle, PuzzleTrait, Solution};
-use snarkvm::prelude::{Address, Network, TestnetV0};
+use snarkvm::{
+    circuit::AleoTestnetV0,
+    ledger::{
+        narwhal::Data,
+        puzzle::{PartialSolution, Puzzle, PuzzleTrait, Solution},
+    },
+    prelude::{Address, Network, TestnetV0},
+};
 use snarkvm_ledger_puzzle_epoch::SynthesisPuzzle;
-use tokio::runtime::Runtime;
-use tokio::{sync::mpsc, task};
+use tokio::{runtime::Runtime, sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
@@ -279,21 +282,22 @@ impl Prover {
             let total_solutions = total_proofs.clone();
             let puzzle = puzzle.clone();
             thread::spawn(move || {
-                loop {
+                core_affinity::set_for_current(core_affinity::CoreId { id: i });
+                'outer: loop {
                     let current_proof_target = current_proof_target.clone();
                     let epoch_hash = epoch_hash.clone();
                     let address = address.clone();
                     let puzzle = puzzle.clone();
                     let total_solutions_ = total_solutions.clone();
-                    if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                        debug!(
-                            "Terminating stale work: current {} latest {}",
-                            epoch_number,
-                            current_epoch.load(Ordering::SeqCst)
-                        );
-                        break;
-                    }
                     if let (solution, proof_difficulty) = loop {
+                        if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                            debug!(
+                                "Terminating stale work: current {} latest {}",
+                                epoch_number,
+                                current_epoch.load(Ordering::SeqCst)
+                            );
+                            break 'outer;
+                        }
                         debug!(
                             "Proving epoch {} with difficulty {}",
                             epoch_number,
@@ -308,7 +312,7 @@ impl Prover {
                             Option::from(current_proof_target.load(Ordering::SeqCst)),
                         );
                         if res.is_ok() {
-                            break res.unwrap()
+                            break res.unwrap();
                         }
                         total_solutions_.fetch_add(1, Ordering::SeqCst);
                     } {
