@@ -4,6 +4,7 @@ use std::{
         atomic::{AtomicU32, AtomicU64, Ordering},
         Arc,
     },
+    thread,
     time::Duration,
 };
 
@@ -14,9 +15,10 @@ use rayon::{ThreadPool, ThreadPoolBuilder};
 use snarkos_node_router_messages::UnconfirmedSolution;
 use snarkvm::circuit::AleoTestnetV0;
 use snarkvm::ledger::narwhal::Data;
-use snarkvm::ledger::puzzle::{PartialSolution, Puzzle, Solution};
+use snarkvm::ledger::puzzle::{PartialSolution, Puzzle, PuzzleTrait, Solution};
 use snarkvm::prelude::{Address, Network, TestnetV0};
 use snarkvm_ledger_puzzle_epoch::SynthesisPuzzle;
+use tokio::runtime::Runtime;
 use tokio::{sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
@@ -267,24 +269,54 @@ impl Prover {
         let total_proofs = self.total_proofs.clone();
         let puzzle = self.puzzle.clone();
 
-        task::spawn(async move {
-            let mut joins = Vec::new();
-            for (_, tp) in thread_pools.iter().enumerate() {
-                let current_proof_target = current_proof_target.clone();
-                let current_epoch = current_epoch.clone();
-                let client = client.clone();
-                let epoch_hash = epoch_hash.clone();
-                let address = address.clone();
-                let total_solutions = total_proofs.clone();
-                let tp = tp.clone();
-                let puzzle = puzzle.clone();
-                joins.push(task::spawn(async move {
-                    loop {
-                        let current_proof_target = current_proof_target.clone();
-                        let epoch_hash = epoch_hash.clone();
-                        let address = address.clone();
-                        let tp = tp.clone();
-                        let puzzle = puzzle.clone();
+        for (i, _) in thread_pools.iter().enumerate() {
+            let current_proof_target = current_proof_target.clone();
+            let current_epoch = current_epoch.clone();
+            let client = client.clone();
+            let epoch_hash = epoch_hash.clone();
+            let address = address.clone();
+            let total_solutions = total_proofs.clone();
+            let puzzle = puzzle.clone();
+            task::spawn(async move {
+                loop {
+                    let current_proof_target = current_proof_target.clone();
+                    let epoch_hash = epoch_hash.clone();
+                    let address = address.clone();
+                    let puzzle = puzzle.clone();
+                    let total_solutions_ = total_solutions.clone();
+                    if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                        debug!(
+                            "Terminating stale work: current {} latest {}",
+                            epoch_number,
+                            current_epoch.load(Ordering::SeqCst)
+                        );
+                        break;
+                    }
+                    if let Ok(Ok(Ok((solution, proof_difficulty)))) = task::spawn_blocking(move || {
+                        thread::spawn(move || loop {
+                            core_affinity::set_for_current(core_affinity::CoreId { id: i });
+                            debug!(
+                                "Proving epoch {} with difficulty {}",
+                                epoch_number,
+                                current_proof_target.load(Ordering::SeqCst)
+                            );
+                            let counter = thread_rng().next_u64();
+                            let res = Prover::prove(
+                                &puzzle,
+                                epoch_hash,
+                                address,
+                                counter,
+                                Option::from(current_proof_target.load(Ordering::SeqCst)),
+                            );
+                            if res.is_ok() {
+                                return res;
+                            }
+                            total_solutions_.fetch_add(1, Ordering::SeqCst);
+                        })
+                        .join()
+                    })
+                    .await
+                    {
                         if epoch_number != current_epoch.load(Ordering::SeqCst) {
                             debug!(
                                 "Terminating stale work: current {} latest {}",
@@ -293,52 +325,24 @@ impl Prover {
                             );
                             break;
                         }
-                        if let Ok(Ok((solution, proof_difficulty))) = task::spawn_blocking(move || {
-                            tp.install(|| {
-                                loop {
-                                    let counter = thread_rng().next_u64();
-                                    return Prover::prove(
-                                        &puzzle,
-                                        epoch_hash,
-                                        address,
-                                        counter,
-                                        Option::from(current_proof_target.load(Ordering::SeqCst)),
-                                    )
-                                }
-                            })
-                        })
-                        .await
-                        {
-                            if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                                debug!(
-                                    "Terminating stale work: current {} latest {}",
-                                    epoch_number,
-                                    current_epoch.load(Ordering::SeqCst)
-                                );
-                                break;
-                            }
 
-                            info!(
-                                "Solution found for epoch {} with difficulty {}",
-                                epoch_number, proof_difficulty
-                            );
+                        info!(
+                            "Solution found for epoch {} with difficulty {}",
+                            epoch_number, proof_difficulty
+                        );
 
-                            // Send a `PoolResponse` to the operator.
-                            let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                                solution_id: solution.id(),
-                                solution: Data::Object(solution),
-                            });
-                            if let Err(error) = client.sender().send(message).await {
-                                error!("Failed to send PoolResponse: {}", error);
-                            }
-                            total_solutions.fetch_add(1, Ordering::SeqCst);
-                        } else {
-                            total_solutions.fetch_add(1, Ordering::SeqCst);
+                        // Send a `PoolResponse` to the operator.
+                        let message = Message::UnconfirmedSolution(UnconfirmedSolution {
+                            solution_id: solution.id(),
+                            solution: Data::Object(solution),
+                        });
+                        if let Err(error) = client.sender().send(message).await {
+                            error!("Failed to send PoolResponse: {}", error);
                         }
+                        total_solutions.fetch_add(1, Ordering::SeqCst);
                     }
-                }));
-            }
-            futures::future::join_all(joins).await;
-        });
+                }
+            });
+        }
     }
 }
