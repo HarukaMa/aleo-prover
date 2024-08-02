@@ -23,7 +23,7 @@ use snarkos_node_router_messages::{
 use snarkvm::console::types::Field;
 use snarkvm::ledger::Block;
 use snarkvm::ledger::narwhal::Data;
-use snarkvm::prelude::{Network, TestnetV0};
+use snarkvm::prelude::{CanaryV0, Network, TestnetV0};
 use snarkvm::utilities::FromBytes;
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -41,7 +41,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::prover::ProverEvent;
 
-type N = TestnetV0;
+type N = CanaryV0;
 
 type Message = snarkos_node_router_messages::Message<N>;
 

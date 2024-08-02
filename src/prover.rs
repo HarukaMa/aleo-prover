@@ -22,14 +22,16 @@ use snarkvm::{
     },
     prelude::{Address, Network, TestnetV0},
 };
+use snarkvm::circuit::AleoCanaryV0;
+use snarkvm::prelude::CanaryV0;
 use snarkvm_ledger_puzzle_epoch::SynthesisPuzzle;
 use tokio::{runtime::Runtime, sync::mpsc, task};
 use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
 
-type N = TestnetV0;
-type A = AleoTestnetV0;
+type N = CanaryV0;
+type A = AleoCanaryV0;
 
 type Message = snarkos_node_router_messages::Message<N>;
 
@@ -282,14 +284,14 @@ impl Prover {
             let total_solutions = total_proofs.clone();
             let puzzle = puzzle.clone();
             thread::spawn(move || {
-                core_affinity::set_for_current(core_affinity::CoreId { id: i });
+                // core_affinity::set_for_current(core_affinity::CoreId { id: i });
                 'outer: loop {
                     let current_proof_target = current_proof_target.clone();
                     let epoch_hash = epoch_hash.clone();
                     let address = address.clone();
                     let puzzle = puzzle.clone();
                     let total_solutions_ = total_solutions.clone();
-                    if let (solution, proof_difficulty) = loop {
+                    let (solution, proof_difficulty) = loop {
                         if epoch_number != current_epoch.load(Ordering::SeqCst) {
                             debug!(
                                 "Terminating stale work: current {} latest {}",
@@ -315,31 +317,30 @@ impl Prover {
                             break res.unwrap();
                         }
                         total_solutions_.fetch_add(1, Ordering::SeqCst);
-                    } {
-                        if epoch_number != current_epoch.load(Ordering::SeqCst) {
-                            debug!(
-                                "Terminating stale work: current {} latest {}",
-                                epoch_number,
-                                current_epoch.load(Ordering::SeqCst)
-                            );
-                            break;
-                        }
-
-                        info!(
-                            "Solution found for epoch {} with difficulty {}",
-                            epoch_number, proof_difficulty
+                    };
+                    if epoch_number != current_epoch.load(Ordering::SeqCst) {
+                        debug!(
+                            "Terminating stale work: current {} latest {}",
+                            epoch_number,
+                            current_epoch.load(Ordering::SeqCst)
                         );
-
-                        // Send a `PoolResponse` to the operator.
-                        let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                            solution_id: solution.id(),
-                            solution: Data::Object(solution),
-                        });
-                        if let Err(error) = block_on(client.sender().send(message)) {
-                            error!("Failed to send PoolResponse: {}", error);
-                        }
-                        total_solutions.fetch_add(1, Ordering::SeqCst);
+                        break;
                     }
+
+                    info!(
+                        "Solution found for epoch {} with difficulty {}",
+                        epoch_number, proof_difficulty
+                    );
+
+                    // Send a `PoolResponse` to the operator.
+                    let message = Message::UnconfirmedSolution(UnconfirmedSolution {
+                        solution_id: solution.id(),
+                        solution: Data::Object(solution),
+                    });
+                    if let Err(error) = block_on(client.sender().send(message)) {
+                        error!("Failed to send PoolResponse: {}", error);
+                    }
+                    total_solutions.fetch_add(1, Ordering::SeqCst);
                 }
             });
         }

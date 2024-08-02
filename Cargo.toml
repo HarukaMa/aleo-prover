@@ -15,11 +15,11 @@ path = "src/main.rs"
 #snarkvm = { path = "../../src/snarkVM" }
 #snarkvm-algorithms = { path = "../../src/snarkVM/algorithms" }
 #snarkos = { path = "../../src/snarkOS" }
-snarkvm = { git = "https://github.com/AleoNet/snarkVM.git", rev = "d170a9f"}
-snarkvm-ledger-puzzle-epoch = { git = "https://github.com/AleoNet/snarkVM.git", rev = "d170a9f", default-features = false, features = ["serial"]}
+snarkvm = { git = "https://github.com/AleoNet/snarkVM.git", rev = "3d8b912"}
+snarkvm-ledger-puzzle-epoch = { git = "https://github.com/AleoNet/snarkVM.git", rev = "3d8b912", default-features = false, features = ["serial"]}
 
-snarkos-account = { git = "https://github.com/AleoNet/snarkOS", rev = "878624d6" }
-snarkos-node-router-messages = { git = "https://github.com/AleoNet/snarkOS", rev = "878624d6" }
+snarkos-account = { git = "https://github.com/AleoNet/snarkOS", rev = "23baf504" }
+snarkos-node-router-messages = { git = "https://github.com/AleoNet/snarkOS", rev = "23baf504" }
 
 #snarkos-account = { path = "../snarkOS/account" }
 #snarkos-node-router-messages = { path = "../snarkOS/node/router/messages" }
@@ -55,7 +55,7 @@ features = ["derive"]
 [dependencies.tokio]
 version = "1.37.0"
 features = [
-    "rt-multi-thread",
+    "rt",
     "macros",
     "sync",
     "net"

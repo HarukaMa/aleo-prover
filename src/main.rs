@@ -7,7 +7,7 @@ mod prover;
 use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use clap::Parser;
-use snarkvm::prelude::{Address, PrivateKey, TestnetV0, ViewKey};
+use snarkvm::prelude::{Address, CanaryV0, PrivateKey, TestnetV0, ViewKey};
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
@@ -16,7 +16,7 @@ use crate::{
     prover::Prover,
 };
 
-type N = TestnetV0;
+type N = CanaryV0;
 
 #[derive(Debug, Parser)]
 #[clap(name = "prover", about = "Standalone prover.")]
@@ -111,20 +111,10 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
-    let beacons = if opt.beacon.is_none() {
+    let beacons: Vec<String> = if opt.beacon.is_none() {
         [
-            "164.92.111.59:4133",
-            "159.223.204.96:4133",
-            "167.71.219.176:4133",
-            "157.245.205.209:4133",
-            "134.122.95.106:4133",
-            "161.35.24.55:4133",
-            "138.68.103.139:4133",
-            "207.154.215.49:4133",
-            "46.101.114.158:4133",
-            "138.197.190.94:4133",
         ]
-        .map(|s| s.to_string())
+        .map(|s: &str| s.to_string())
         .to_vec()
     } else {
         vec![opt.beacon.unwrap()]
@@ -156,7 +146,7 @@ async fn main() {
         .for_each(drop);
 
     let threads = opt.threads.unwrap_or(num_cpus::get() as u16);
-    let thread_pool_size = opt.thread_pool_size.unwrap_or(4);
+    let thread_pool_size = opt.thread_pool_size.unwrap_or(1);
 
     let cuda: Option<Vec<i16>>;
     let cuda_jobs: Option<u8>;
