@@ -16,7 +16,7 @@ use crate::{
     prover::Prover,
 };
 
-type N = CanaryV0;
+type N = TestnetV0;
 
 #[derive(Debug, Parser)]
 #[clap(name = "prover", about = "Standalone prover.")]

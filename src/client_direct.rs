@@ -41,7 +41,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::prover::ProverEvent;
 
-type N = CanaryV0;
+type N = TestnetV0;
 
 type Message = snarkos_node_router_messages::Message<N>;
 

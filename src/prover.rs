@@ -30,8 +30,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::client_direct::DirectClient;
 
-type N = CanaryV0;
-type A = AleoCanaryV0;
+type N = TestnetV0;
+type A = AleoTestnetV0;
 
 type Message = snarkos_node_router_messages::Message<N>;
 
