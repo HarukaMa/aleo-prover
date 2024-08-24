@@ -1,4 +1,4 @@
-use std::{sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc, time::Duration};
 
 use aleo_stratum::{
     codec::{ResponseParams, StratumCodec},
@@ -6,7 +6,12 @@ use aleo_stratum::{
 };
 use futures_util::sink::SinkExt;
 use json_rpc_types::Id;
-use snarkvm::{console::account::address::Address, prelude::Testnet3};
+use rand::{rngs::OsRng, seq::SliceRandom};
+use snarkvm::{
+    console::{account::Address, network::MainnetV0},
+    prelude::Network,
+    utilities::FromBytes,
+};
 use tokio::{
     net::TcpStream,
     sync::{
@@ -23,19 +28,21 @@ use tracing::{debug, error, info, warn};
 
 use crate::prover::ProverEvent;
 
+type N = MainnetV0;
+
 pub struct Client {
-    pub address: Address<Testnet3>,
-    server: String,
+    pub address: Address<N>,
+    servers: Vec<String>,
     sender: Arc<Sender<StratumMessage>>,
     receiver: Arc<Mutex<Receiver<StratumMessage>>>,
 }
 
 impl Client {
-    pub fn init(address: Address<Testnet3>, server: String) -> Arc<Self> {
+    pub fn init(address: Address<N>, servers: Vec<String>) -> Arc<Self> {
         let (sender, receiver) = mpsc::channel(1024);
         Arc::new(Self {
             address,
-            server,
+            servers,
             sender: Arc::new(sender),
             receiver: Arc::new(Mutex::new(receiver)),
         })
@@ -54,18 +61,20 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
     task::spawn(async move {
         let receiver = client.receiver();
         let mut id = 1;
+        let rng = &mut OsRng;
         loop {
             info!("Connecting to server...");
-            match timeout(Duration::from_secs(5), TcpStream::connect(&client.server)).await {
+            let server = client.servers.choose(rng).unwrap();
+            match timeout(Duration::from_secs(5), TcpStream::connect(server)).await {
                 Ok(socket) => match socket {
                     Ok(socket) => {
-                        info!("Connected to {}", client.server);
+                        info!("Connected to {}", server);
                         let mut framed = Framed::new(socket, StratumCodec::default());
                         let mut pool_address: Option<String> = None;
                         let handshake = StratumMessage::Subscribe(
                             Id::Num(id),
                             format!("HarukaProver/{}", env!("CARGO_PKG_VERSION")),
-                            "AleoStratum/2.0.0".to_string(),
+                            "AleoStratum/3.0.0".to_string(),
                             None,
                         );
                         id += 1;
@@ -194,14 +203,16 @@ pub fn start(prover_sender: Arc<Sender<ProverEvent>>, client: Arc<Client>) {
                                                     }
                                                 }
                                             }
-                                            StratumMessage::Notify(job_id, epoch_challenge, address, _) => {
+                                            StratumMessage::Notify(job_id, epoch_hash, address, _) => {
                                                 let job_id_bytes = hex::decode(job_id).expect("Failed to decode job_id");
-                                                if job_id_bytes.len() != 8 {
+                                                if job_id_bytes.len() != 4 {
                                                     error!("Unexpected job_id length: {}", job_id_bytes.len());
                                                     continue;
                                                 }
-                                                let epoch = u64::from_le_bytes(job_id_bytes[0..8].try_into().unwrap());
-                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch, epoch_challenge, address.unwrap_or_else(|| pool_address.clone().expect("No pool address defined")))).await {
+                                                let epoch = u32::from_le_bytes(job_id_bytes[0..4].try_into().unwrap());
+                                                let epoch_hash = <N as Network>::BlockHash::from_bytes_le(&hex::decode(epoch_hash).expect("Failed to decode epoch_hash")).expect("Failed to parse epoch_hash");
+                                                let address = Address::<N>::from_str(address.unwrap_or_else(|| pool_address.clone().expect("No pool address defined")).as_str()).expect("Failed to parse address");
+                                                if let Err(e) = prover_sender.send(ProverEvent::NewWork(epoch, epoch_hash, address)).await {
                                                     error!("Error sending work to prover: {}", e);
                                                 } else {
                                                     debug!("Sent work to prover");

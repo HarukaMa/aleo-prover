@@ -1,22 +1,22 @@
 extern crate core;
 
 #[forbid(unsafe_code)]
-mod client_direct;
+mod client;
 mod prover;
 
 use std::{net::ToSocketAddrs, str::FromStr, sync::Arc};
 
 use clap::Parser;
-use snarkvm::prelude::{Address, CanaryV0, PrivateKey, TestnetV0, ViewKey};
+use snarkvm::prelude::{Address, MainnetV0, PrivateKey, ViewKey};
 use tracing::{debug, error, info};
 use tracing_subscriber::layer::SubscriberExt;
 
 use crate::{
-    client_direct::{start, DirectClient},
+    client::{start, Client},
     prover::Prover,
 };
 
-type N = TestnetV0;
+type N = MainnetV0;
 
 #[derive(Debug, Parser)]
 #[clap(name = "prover", about = "Standalone prover.")]
@@ -32,14 +32,14 @@ struct Opt {
     private_key: Option<PrivateKey<N>>,
 
     /// Beacon node address
-    #[clap(short = 'b', long = "beacon")]
-    beacon: Option<String>,
+    #[clap(short = 's', long = "pool")]
+    pool: Option<Vec<String>>,
 
     /// Number of threads, defaults to number of CPU threads
     #[clap(short = 't', long = "threads")]
     threads: Option<u16>,
 
-    /// Thread pool size, number of threads in each thread pool, defaults to 4
+    /// Thread pool size, number of threads in each thread pool, defaults to 1
     #[clap(short = 'i', long = "thread-pool-size")]
     thread_pool_size: Option<u8>,
 
@@ -111,35 +111,29 @@ async fn main() {
         tracing::subscriber::set_global_default(subscriber).expect("unable to set global default subscriber");
     }
 
-    let beacons: Vec<String> = if opt.beacon.is_none() {
-        [
-        ]
-        .map(|s: &str| s.to_string())
-        .to_vec()
+    let servers: Vec<String> = if opt.pool.is_none() {
+        [].map(|s: &str| s.to_string()).to_vec()
     } else {
-        vec![opt.beacon.unwrap()]
+        opt.pool.unwrap()
     };
-    let private_key = match opt.private_key {
-        Some(private_key) => private_key,
-        None => match dotenvy::var("PRIVATE_KEY") {
-            Ok(private_key) => match PrivateKey::from_str(&private_key) {
-                Ok(private_key) => private_key,
-                Err(e) => {
-                    error!("Invalid private key: {}", e);
-                    return;
-                }
-            },
-            Err(_) => {
-                error!("Private key is required");
+    let private_key = opt.private_key.unwrap_or_else(|| match dotenvy::var("PRIVATE_KEY") {
+        Ok(private_key) => match PrivateKey::from_str(&private_key) {
+            Ok(private_key) => private_key,
+            Err(e) => {
+                error!("Invalid private key: {}", e);
                 std::process::exit(1);
             }
         },
-    };
-    beacons
+        Err(_) => {
+            error!("Private key is required");
+            std::process::exit(1);
+        }
+    });
+    servers
         .iter()
         .map(|s| {
             if let Err(e) = s.to_socket_addrs() {
-                error!("Invalid beacon node address: {}", e);
+                error!("Invalid pool address: {}", e);
                 std::process::exit(1);
             }
         })
@@ -174,7 +168,7 @@ async fn main() {
     //     debug!("Node initialized");
     // }
 
-    let client = DirectClient::init(private_key.try_into().unwrap(), beacons);
+    let client = Client::init(private_key.try_into().unwrap(), servers);
 
     let prover: Arc<Prover> = match Prover::init(threads, thread_pool_size, client.clone(), cuda, cuda_jobs).await {
         Ok(prover) => prover,

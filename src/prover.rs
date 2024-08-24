@@ -8,39 +8,33 @@ use std::{
     time::Duration,
 };
 
+use aleo_stratum::message::StratumMessage;
 use ansi_term::Colour::{Cyan, Green, Red};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 use futures::executor::block_on;
+use json_rpc_types::Id;
 use rand::{thread_rng, RngCore};
 use rayon::{ThreadPool, ThreadPoolBuilder};
-use snarkos_node_router_messages::UnconfirmedSolution;
 use snarkvm::{
-    circuit::AleoTestnetV0,
-    ledger::{
-        narwhal::Data,
-        puzzle::{PartialSolution, Puzzle, PuzzleTrait, Solution},
-    },
-    prelude::{Address, Network, TestnetV0},
+    circuit::AleoV0,
+    ledger::puzzle::{PartialSolution, Puzzle, Solution},
+    prelude::{Address, MainnetV0, Network},
 };
-use snarkvm::circuit::AleoCanaryV0;
-use snarkvm::prelude::CanaryV0;
 use snarkvm_ledger_puzzle_epoch::SynthesisPuzzle;
-use tokio::{runtime::Runtime, sync::mpsc, task};
-use tracing::{debug, error, info, warn};
+use tokio::{sync::mpsc, task};
+use tracing::{debug, error, info};
 
-use crate::client_direct::DirectClient;
+use crate::client::Client;
 
-type N = TestnetV0;
-type A = AleoTestnetV0;
-
-type Message = snarkos_node_router_messages::Message<N>;
+type N = MainnetV0;
+type A = AleoV0;
 
 pub struct Prover {
     thread_pools: Arc<Vec<Arc<ThreadPool>>>,
     cuda: Option<Vec<i16>>,
     _cuda_jobs: Option<u8>,
     sender: Arc<mpsc::Sender<ProverEvent>>,
-    client: Arc<DirectClient>,
+    client: Arc<Client>,
     current_epoch: Arc<AtomicU32>,
     total_proofs: Arc<AtomicU32>,
     valid_shares: Arc<AtomicU32>,
@@ -53,14 +47,14 @@ pub struct Prover {
 pub enum ProverEvent {
     NewTarget(u64),
     NewWork(u32, <N as Network>::BlockHash, Address<N>),
-    _Result(bool, Option<String>),
+    Result(bool, Option<String>),
 }
 
 impl Prover {
     pub async fn init(
         threads: u16,
         thread_pool_size: u8,
-        client: Arc<DirectClient>,
+        client: Arc<Client>,
         cuda: Option<Vec<i16>>,
         cuda_jobs: Option<u8>,
     ) -> Result<Arc<Self>> {
@@ -123,7 +117,7 @@ impl Prover {
                     ProverEvent::NewWork(epoch_number, epoch_hash, address) => {
                         p.new_work(epoch_number, epoch_hash, address).await;
                     }
-                    ProverEvent::_Result(success, error) => {
+                    ProverEvent::Result(success, error) => {
                         p.result(success, error).await;
                     }
                 }
@@ -275,7 +269,7 @@ impl Prover {
         let total_proofs = self.total_proofs.clone();
         let puzzle = self.puzzle.clone();
 
-        for (i, _) in thread_pools.iter().enumerate() {
+        for (_i, _) in thread_pools.iter().enumerate() {
             let current_proof_target = current_proof_target.clone();
             let current_epoch = current_epoch.clone();
             let client = client.clone();
@@ -333,10 +327,12 @@ impl Prover {
                     );
 
                     // Send a `PoolResponse` to the operator.
-                    let message = Message::UnconfirmedSolution(UnconfirmedSolution {
-                        solution_id: solution.id(),
-                        solution: Data::Object(solution),
-                    });
+                    let message = StratumMessage::Submit(
+                        Id::Num(0),
+                        client.address.to_string(),
+                        hex::encode(epoch_number.to_le_bytes()),
+                        solution.partial_solution().counter().to_string(),
+                    );
                     if let Err(error) = block_on(client.sender().send(message)) {
                         error!("Failed to send PoolResponse: {}", error);
                     }
